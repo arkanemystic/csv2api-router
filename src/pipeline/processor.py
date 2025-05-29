@@ -1,91 +1,19 @@
 import os
 from typing import Dict, List, Union
-import aiohttp
 import logging
 import json
 from pathlib import Path
+from .llm_client import generate_api_calls, SUPPORTED_APIS
 
 class LLMProcessor:
     """Process extracted data using LLM to identify and structure API calls."""
     
-    def __init__(self, ollama_base_url: str = "http://localhost:11434"):
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.ollama_base_url = ollama_base_url
-        self.supported_apis = {
-            'transaction': ['get_transaction', 'get_receipt'],
-            'token': ['get_balance', 'get_transfers'],
-            'contract': ['get_abi', 'get_events']
-        }
-    
-    def _create_prompt(self, data: Dict) -> str:
-        """Create a prompt for the LLM based on the input data."""
-        tx_hash = data.get('tx_hash')
-        if not tx_hash:
-            return '''{"api_calls": []}'''
-            
-        prompt = f"""Given this transaction hash: {tx_hash}
-
-Generate exactly these two API calls using that exact hash:
-1. get_transaction call to fetch transaction details
-2. get_receipt call to get transaction status
-
-Return this exact JSON format:
-{{
-  "api_calls": [
-    {{
-      "method": "get_transaction",
-      "params": {{
-        "tx_hash": "{tx_hash}"
-      }}
-    }},
-    {{
-      "method": "get_receipt",
-      "params": {{
-        "tx_hash": "{tx_hash}"
-      }}
-    }}
-  ]
-}}
-
-Return only the JSON above. No other text. Use the exact hash shown."""
-        
-        return prompt
-    
-    async def _call_ollama(self, prompt: str) -> str:
-        """Make API call to local Ollama instance."""
-        async with aiohttp.ClientSession() as session:
-            payload = {
-                "model": "deepseek-r1",
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.0,  # Use 0 temperature for deterministic responses
-                    "num_predict": 512   # Ensure we get enough tokens for the response
-                }
-            }
-            
-            try:
-                async with session.post(f"{self.ollama_base_url}/api/generate", json=payload) as response:
-                    if response.status != 200:
-                        raise Exception(f"Ollama API returned status {response.status}")
-                    
-                    result = await response.json()
-                    return result["response"]
-                    
-            except Exception as e:
-                self.logger.error(f"Error calling Ollama API: {e}")
-                raise
+        self.supported_apis = SUPPORTED_APIS  # Use the same API definitions as llm_client
     
     async def process_data(self, extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
-        """
-        Process extracted data using LLM to identify required API calls.
-        
-        Args:
-            extracted_data: Dictionary or list of dictionaries containing extracted data
-            
-        Returns:
-            List of identified API calls with parameters
-        """
+        """Process extracted data using LLM to identify required API calls."""
         if isinstance(extracted_data, dict):
             extracted_data = [extracted_data]
             
@@ -93,64 +21,63 @@ Return only the JSON above. No other text. Use the exact hash shown."""
         
         for data in extracted_data:
             try:
-                prompt = self._create_prompt(data)
-                self.logger.info(f"DEBUG: LLM Prompt:\n{prompt}")
+                tx_hash = data.get('tx_hash')
+                chain = data.get('chain', 'ETHEREUM')
                 
-                # Call local Ollama instance
-                response_text = await self._call_ollama(prompt)
-                self.logger.info(f"DEBUG: LLM Response:\n{response_text}")
+                if not tx_hash:
+                    self.logger.warning("No transaction hash provided")
+                    continue
                 
-                # Parse the response
-                try:
-                    # Try to find JSON in the response
-                    json_start = response_text.find('{')
-                    json_end = response_text.rfind('}') + 1
-                    if json_start >= 0 and json_end > json_start:
-                        json_str = response_text[json_start:json_end]
-                        result = json.loads(json_str)
-                    else:
-                        self.logger.error(f"No JSON found in LLM response: {response_text}")
-                        raise json.JSONDecodeError("No JSON found in response", response_text, 0)
-                    
-                    api_calls = result.get('api_calls', [])
-                    self.logger.info(f"DEBUG: Parsed API calls: {json.dumps(api_calls, indent=2)}")
-                    
-                    # Validate and filter API calls
-                    validated_calls = []
-                    for call in api_calls:
-                        method = call.get('method')
-                        if not method:
-                            self.logger.error(f"Missing method in API call: {call}")
+                # Generate API calls with chain information
+                result = generate_api_calls(tx_hash=tx_hash, chain=chain)
+                
+                if not result:
+                    self.logger.error(f"Failed to generate API calls for tx_hash: {tx_hash}")
+                    continue
+                
+                api_calls = result.get('api_calls', [])
+                
+                # Validate each API call
+                validated_calls = []
+                for call in api_calls:
+                    try:
+                        if not call.get('method'):
+                            self.logger.error("Missing method in API call: %s", call)
                             continue
                             
                         if not self.validate_api_call(call):
-                            self.logger.error(f"Invalid API call parameters: {call}")
+                            self.logger.error("Invalid API call parameters: %s", call)
                             continue
                             
+                        # Find API category
                         category = next((cat for cat, methods in self.supported_apis.items() 
-                                      if method in methods), None)
+                                       if call['method'] in methods), None)
+                                       
+                        if not category:
+                            self.logger.error("Unsupported API method: %s", call['method'])
+                            continue
+                            
+                        # Use chain from API call or fall back to data's chain
+                        call_chain = call.get('chain') or chain
                         
-                        if category:
-                            # Add metadata to the API call
-                            call['category'] = category
-                            call['chain'] = data.get('chain', 'ETHEREUM')
-                            validated_calls.append(call)
-                        else:
-                            self.logger.error(f"Unsupported API method identified: {method}")
-                    
-                    all_api_calls.extend(validated_calls)
-                    
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to parse LLM response as JSON: {response_text}")
-                    self.logger.error(f"JSON Error: {str(e)}")
-                    continue
-                    
+                        # Update with category and ensure chain is set
+                        call.update({
+                            'category': category,
+                            'chain': call_chain
+                        })
+                        validated_calls.append(call)
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error validating API call: {str(e)}")
+                        continue
+                
+                all_api_calls.extend(validated_calls)
+                
             except Exception as e:
-                self.logger.error(f"Error processing data with LLM: {str(e)}")
-                continue
+                self.logger.error("Error processing data: %s", str(e))
         
         return all_api_calls
-    
+
     def validate_api_call(self, api_call: Dict) -> bool:
         """Validate that an API call has all required parameters."""
         required_params = {
@@ -170,19 +97,18 @@ Return only the JSON above. No other text. Use the exact hash shown."""
             
         return all(param in params for param in required_params[method])
 
-async def process_with_llm(extracted_data: Union[Dict, List[Dict]], 
-                         ollama_base_url: str = "http://localhost:11434") -> List[Dict]:
+# Helper function for external use
+async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
     """
     Process extracted data using LLM to identify and structure API calls.
     
     Args:
         extracted_data: Dictionary or list of dictionaries containing extracted data
-        ollama_base_url: URL of the Ollama API server (default: http://localhost:11434)
         
     Returns:
         List of structured API calls
     """
-    processor = LLMProcessor(ollama_base_url=ollama_base_url)
+    processor = LLMProcessor()
     return await processor.process_data(extracted_data)
 
 if __name__ == "__main__":
@@ -198,5 +124,5 @@ if __name__ == "__main__":
     async def test():
         result = await process_with_llm(test_data)
         print(json.dumps(result, indent=2))
-    
+        
     asyncio.run(test())

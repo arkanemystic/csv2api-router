@@ -10,11 +10,12 @@ class DataExtractor:
     
     def __init__(self):
         self.tx_hash_pattern = re.compile(r'0x[a-fA-F0-9]{64}')
+        # Order patterns from most specific to least specific to avoid false matches
         self.chain_patterns = {
-            'ethereum': re.compile(r'etherscan\.io', re.IGNORECASE),
+            'optimism': re.compile(r'optimistic\.etherscan\.io', re.IGNORECASE),
+            'ethereum': re.compile(r'^(?!.*optimistic).*etherscan\.io', re.IGNORECASE),
             'polygon': re.compile(r'polygonscan\.com', re.IGNORECASE),
-            'bsc': re.compile(r'bscscan\.com', re.IGNORECASE),
-            'optimism': re.compile(r'optimistic\.etherscan\.io', re.IGNORECASE)
+            'bsc': re.compile(r'bscscan\.com', re.IGNORECASE)
         }
         self.logger = logging.getLogger(__name__)
     

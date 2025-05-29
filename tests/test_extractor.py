@@ -1,24 +1,52 @@
 import unittest
-from src.pipeline.extractor import Extractor
+from pathlib import Path
+from src.pipeline.extractor import DataExtractor
 
-class TestExtractor(unittest.TestCase):
+class TestDataExtractor(unittest.TestCase):
 
     def setUp(self):
-        self.extractor = Extractor()
-
-    def test_extract_csv(self):
-        # Test extraction from a sample CSV
-        sample_csv = "name,age\nAlice,30\nBob,25"
-        expected_output = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
-        result = self.extractor.extract(sample_csv)
-        self.assertEqual(result, expected_output)
-
-    def test_extract_unstructured_text(self):
-        # Test extraction from unstructured text
-        sample_text = "Alice is 30 years old. Bob is 25."
-        expected_output = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
-        result = self.extractor.extract(sample_text)
-        self.assertEqual(result, expected_output)
+        self.extractor = DataExtractor()
+        self.test_data_dir = Path(__file__).parent.parent / 'dataset'
+        
+    def test_tx_hash_extraction(self):
+        # Test transaction hash extraction
+        sample_tx = "View on Etherscan: 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        match = self.extractor.tx_hash_pattern.search(sample_tx)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(), "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+    
+    def test_chain_detection(self):
+        # Test chain detection from URLs
+        test_cases = {
+            'https://etherscan.io/tx/0x123': 'ETHEREUM',
+            'https://polygonscan.com/tx/0x123': 'POLYGON',
+            'https://bscscan.com/tx/0x123': 'BSC',
+            'https://optimistic.etherscan.io/tx/0x123': 'OPTIMISM'
+        }
+        
+        for url, expected_chain in test_cases.items():
+            chain = None
+            for c, pattern in self.extractor.chain_patterns.items():
+                if pattern.search(url):
+                    chain = c.upper()
+                    break
+            self.assertEqual(chain, expected_chain)
+    
+    def test_extract_from_csv(self):
+        # Create a temporary test CSV
+        test_csv = self.test_data_dir / "ten_case_test.csv"
+        if test_csv.exists():
+            result = self.extractor.extract_from_csv(test_csv)
+            self.assertIsInstance(result, list)
+            if len(result) > 0:
+                # Verify extracted data structure
+                self.assertIsInstance(result[0], dict)
+                # Check for expected keys
+                for item in result:
+                    if 'tx_hash' in item:
+                        self.assertRegex(item['tx_hash'], r'^0x[a-fA-F0-9]{64}$')
+                    if 'chain' in item:
+                        self.assertIn(item['chain'], ['ETHEREUM', 'POLYGON', 'BSC', 'OPTIMISM'])
 
 if __name__ == '__main__':
     unittest.main()

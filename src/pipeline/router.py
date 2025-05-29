@@ -11,6 +11,15 @@ class APIRouter:
         self.logger = logging.getLogger(__name__)
         self.api_key = api_key
         self.session = None
+        # Define supported API methods
+        self.supported_methods = {
+            'get_transaction': self._handle_transaction,
+            'get_receipt': self._handle_receipt,
+            'get_balance': self._handle_balance,
+            'get_transfers': self._handle_transfers,
+            'get_abi': self._handle_abi,
+            'get_events': self._handle_events
+        }
     
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -27,20 +36,12 @@ class APIRouter:
             params = api_call.get('params', {})
             chain = api_call.get('chain', 'ETHEREUM')
             
-            # Map method to actual API endpoint and handler
-            handlers = {
-                'get_transaction': self._handle_transaction,
-                'get_receipt': self._handle_receipt,
-                'get_balance': self._handle_balance,
-                'get_transfers': self._handle_transfers,
-                'get_abi': self._handle_abi,
-                'get_events': self._handle_events
-            }
+            if method not in self.supported_methods:
+                error_msg = f"Unsupported API method: {method}"
+                log_error(error_msg)
+                raise ValueError(error_msg)
             
-            if method not in handlers:
-                raise ValueError(f"Unsupported API method: {method}")
-            
-            handler = handlers[method]
+            handler = self.supported_methods[method]
             result = await handler(params, chain)
             
             log_info(f"Successfully executed {method} API call")
@@ -53,6 +54,9 @@ class APIRouter:
                 'result': result
             }
             
+        except ValueError as e:
+            # Re-raise ValueError for invalid methods
+            raise
         except Exception as e:
             error_msg = f"Error executing API call {api_call.get('method')}: {str(e)}"
             log_error(error_msg)

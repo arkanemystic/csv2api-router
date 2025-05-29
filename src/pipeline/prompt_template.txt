@@ -1,0 +1,27 @@
+// Function: Generate API calls for blockchain transaction
+// Input hash: $TX_HASH
+// Chain: $CHAIN
+
+// Example API call JSON to generate:
+{
+  "api_calls": [
+    {
+      "method": "get_transaction",
+      "params": {
+        "tx_hash": "$TX_HASH"
+      }
+    },
+    {
+      "method": "get_receipt",
+      "params": {
+        "tx_hash": "$TX_HASH"
+      }
+    }
+  ]
+}
+
+// Requirements:
+// 1. Return only valid JSON
+// 2. Use the exact transaction hash shown above
+// 3. Include both get_transaction and get_receipt calls
+// 4. No explanation text needed

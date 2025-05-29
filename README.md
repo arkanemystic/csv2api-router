@@ -3,7 +3,7 @@ Modular Python pipeline that processes CSVs or unstructured text, extracts API-r
 
 ## Features
 - Process CSV files and unstructured text
-- Local LLM processing using Ollama (deepseek-r1 model)
+- Local LLM processing using Ollama (deepseek-coder model)
 - Automated API call identification and parameter extraction
 - Support for multiple blockchain APIs (Ethereum, Polygon, BSC)
 - Batch and interactive processing modes
@@ -39,60 +39,75 @@ csv2api-router
 
 ## Prerequisites
 - Python 3.9 or higher
-- Ollama installed and running locally with the deepseek-r1 model
+- Ollama installed and running locally with the deepseek-coder model
 - Required Python packages (see requirements.txt)
 
 ## Installation
-1. Install Ollama and the deepseek-r1 model:
+
+1. Install Ollama and the deepseek-coder model:
 ```bash
 # Install Ollama (if not already installed)
 curl https://ollama.ai/install.sh | sh
 
-# Pull the deepseek-r1 model
-ollama pull deepseek-r1
+# Start Ollama service
+ollama serve
+
+# Pull the deepseek-coder model
+ollama pull deepseek-coder
 ```
 
-2. Install Python dependencies:
+2. Clone and set up the project:
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/csv2api-router.git
+cd csv2api-router
+
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows use: .\venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
+## Model Configuration
+
+This project uses the deepseek-coder model via Ollama for API call identification. The model is configured with:
+- Temperature: 0.0 (deterministic responses)
+- Maximum prediction length: 512 tokens
+- Stop sequence: \n\n (double newline)
+
+These settings ensure consistent and reliable API call generation while maintaining accuracy.
+
 ## Usage
-The pipeline can be run in either batch or interactive mode:
 
-### Interactive Mode
-Process a single file with detailed output:
+1. Start the Ollama service:
 ```bash
-python src/main.py -i path/to/file.csv
+ollama serve
 ```
 
-### Batch Mode
-Process multiple files:
+2. Run the pipeline:
 ```bash
-python src/main.py path/to/directory/
+# Process a CSV file
+python src/main.py process --input dataset/sample.csv --output results.json
+
+# Interactive mode
+python src/main.py interactive
 ```
 
-### Additional Options
-- Process specific file types:
-```bash
-python src/main.py -p "*.txt" path/to/directory/
-```
+## Testing
 
-- Specify custom Ollama endpoint:
+Run the test suite:
 ```bash
-python src/main.py -i --ollama-url "http://localhost:11434" path/to/file.csv
+pytest tests/
 ```
-
-## API Support
-Currently supported blockchain API calls:
-- Transaction: get_transaction, get_receipt
-- Token: get_balance, get_transfers
-- Contract: get_abi, get_events
 
 ## Logging
-The pipeline maintains two types of logs:
-1. Standard logs (`csv2api_YYYYMMDD.log`)
-2. Audit logs in JSON format (`audit_YYYYMMDD.jsonl`)
 
-## Contributing
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+The project maintains two types of logs:
+- `logs/csv2api_YYYYMMDD.log`: General application logs
+- `logs/audit_YYYYMMDD.jsonl`: Detailed audit trail of all API calls
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
