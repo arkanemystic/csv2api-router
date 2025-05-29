@@ -13,8 +13,10 @@ class DataExtractor:
         self.chain_patterns = {
             'ethereum': re.compile(r'etherscan\.io', re.IGNORECASE),
             'polygon': re.compile(r'polygonscan\.com', re.IGNORECASE),
-            'bsc': re.compile(r'bscscan\.com', re.IGNORECASE)
+            'bsc': re.compile(r'bscscan\.com', re.IGNORECASE),
+            'optimism': re.compile(r'optimistic\.etherscan\.io', re.IGNORECASE)
         }
+        self.logger = logging.getLogger(__name__)
     
     def extract_from_csv(self, file_path: Union[str, Path]) -> List[Dict]:
         """
@@ -30,38 +32,57 @@ class DataExtractor:
             df = pd.read_csv(file_path)
             extracted_data = []
             
-            for _, row in df.iterrows():
-                data = {}
-                
-                # Extract transaction hash if present
-                if 'transaction_link' in row:
-                    tx_hash_match = self.tx_hash_pattern.search(str(row['transaction_link']))
-                    if tx_hash_match:
-                        data['tx_hash'] = tx_hash_match.group()
-                
-                # Infer blockchain chain from domain
-                if 'transaction_link' in row:
-                    for chain, pattern in self.chain_patterns.items():
-                        if pattern.search(str(row['transaction_link'])):
-                            data['chain'] = chain.upper()
-                            break
-                
-                # Extract other fields
-                for col in row.index:
-                    if pd.notna(row[col]):
-                        data[col] = row[col]
-                
-                # Fill missing fields with defaults
-                data.setdefault('chain', 'ETHEREUM')
-                data.setdefault('purpose', 'general')
-                data.setdefault('amount', 0.0)
-                
-                extracted_data.append(data)
+            for idx, row in df.iterrows():
+                try:
+                    data = {}
+                    
+                    # Extract transaction hash if present
+                    tx_link = row.get('tx_link') or row.get('transaction_link')
+                    if tx_link and pd.notna(tx_link):
+                        tx_hash_match = self.tx_hash_pattern.search(str(tx_link))
+                        if tx_hash_match:
+                            data['tx_hash'] = tx_hash_match.group()
+                        
+                    # Infer blockchain chain from domain
+                    if tx_link and pd.notna(tx_link):
+                        for chain, pattern in self.chain_patterns.items():
+                            if pattern.search(str(tx_link)):
+                                data['chain'] = chain.upper()
+                                break
+                    
+                    # Extract other fields
+                    for col in row.index:
+                        if pd.notna(row[col]):
+                            # Clean up amount fields
+                            if 'amount' in col.lower():
+                                value = str(row[col]).strip()
+                                if value.startswith('$'):
+                                    value = value[1:]  # Remove dollar sign
+                                try:
+                                    data[col] = float(value.replace(',', ''))
+                                except ValueError:
+                                    self.logger.warning(f"Invalid amount value in row {idx + 1}: {value}")
+                            else:
+                                data[col] = row[col]
+                    
+                    # Fill missing fields with defaults
+                    data.setdefault('chain', 'ETHEREUM')
+                    data.setdefault('purpose', 'general')
+                    
+                    # Only add rows that have either a transaction hash or a valid amount
+                    if 'tx_hash' in data or any('amount' in k.lower() for k in data.keys()):
+                        extracted_data.append(data)
+                    else:
+                        self.logger.warning(f"Skipping row {idx + 1}: No valid transaction hash or amount found")
+                        
+                except Exception as row_error:
+                    self.logger.error(f"Error processing row {idx + 1}: {str(row_error)}")
+                    continue
             
             return extracted_data
             
         except Exception as e:
-            logging.error(f"Error processing CSV file: {e}")
+            self.logger.error(f"Error processing CSV file: {e}")
             raise
     
     def process_text_input(self, input_str: str) -> Dict:

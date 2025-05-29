@@ -1,0 +1,515 @@
+{"timestamp": "2025-05-29T16:33:28.537826", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/large_expenses_test_case.csv", "extracted_data": {"count": 10000}}}
+Extracted 10000 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/large_expenses_test_case.csv
+{"timestamp": "2025-05-29T17:01:28.934597", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+{"timestamp": "2025-05-29T17:12:17.670471", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+Generated 0 API calls
+Error processing file /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv: list index out of range
+{"timestamp": "2025-05-29T17:19:37.452097", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+{"timestamp": "2025-05-29T17:21:30.024303", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+Generated 0 API calls
+Error processing file /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv: list index out of range
+{"timestamp": "2025-05-29T17:23:08.251862", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+{"timestamp": "2025-05-29T17:25:15.600742", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+Generated 0 API calls
+Error processing file /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv: list index out of range
+DEBUG: Extracted data structure: [
+  {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-01",
+    "tx_link": "https://etherscan.io/tx/0x1111111111111111111111111111111111111111111111111111111111111111",
+    "purpose": "Sandwich",
+    "amount in ETH": 0.2,
+    "amount in USD": 400.0
+  },
+  {
+    "tx_hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-02",
+    "tx_link": "https://etherscan.io/tx/0x2222222222222222222222222222222222222222222222222222222222222222",
+    "purpose": "Equipment",
+    "amount in ETH": 0.5,
+    "amount in USD": 1000.0
+  },
+  {
+    "tx_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "chain": "POLYGON",
+    "Time": "2025-08-03",
+    "tx_link": "https://polygonscan.com/tx/0x3333333333333333333333333333333333333333333333333333333333333333",
+    "purpose": "Cloud Services",
+    "amount in ETH": 1.2,
+    "amount in USD": 1800.0
+  },
+  {
+    "tx_hash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-04",
+    "tx_link": "https://etherscan.io/tx/0x4444444444444444444444444444444444444444444444444444444444444444",
+    "amount in ETH": 0.1,
+    "amount in USD": 150.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-05",
+    "tx_link": "https://etherscan.io/tx/0x5555555555555555555555555555555555555555555555555555555555555555",
+    "purpose": "Travel",
+    "amount in USD": 200.0
+  },
+  {
+    "chain": "ETHEREUM",
+    "Time": "2025-08-06",
+    "tx_link": "https://etherscan.io/tx/",
+    "purpose": "Snacks",
+    "amount in ETH": 0.3,
+    "amount in USD": 250.0
+  },
+  {
+    "Time": "2025-08-07",
+    "purpose": "Software",
+    "amount in ETH": 0.4,
+    "amount in USD": 300.0,
+    "chain": "ETHEREUM"
+  },
+  {
+    "tx_hash": "0x7777777777777777777777777777777777777777777777777777777777777777",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-08",
+    "tx_link": "https://etherscan.io/tx/0x7777777777777777777777777777777777777777777777777777777777777777",
+    "purpose": "Office",
+    "amount in ETH": 0.2
+  },
+  {
+    "tx_hash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-09",
+    "tx_link": "https://etherscan.io/tx/0x8888888888888888888888888888888888888888888888888888888888888888",
+    "amount in ETH": 0.25,
+    "amount in USD": 500.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x9999999999999999999999999999999999999999999999999999999999999999",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-10",
+    "tx_link": "https://optimistic.etherscan.io/tx/0x9999999999999999999999999999999999999999999999999999999999999999",
+    "purpose": "Laptop",
+    "amount in ETH": 0.6,
+    "amount in USD": 900.0
+  }
+]
+{"timestamp": "2025-05-29T17:33:38.698220", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+DEBUG: Generated API calls: []
+{"timestamp": "2025-05-29T17:35:50.215182", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+Generated 0 API calls
+Error processing file /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv: list index out of range
+DEBUG: Extracted data structure: [
+  {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-01",
+    "tx_link": "https://etherscan.io/tx/0x1111111111111111111111111111111111111111111111111111111111111111",
+    "purpose": "Sandwich",
+    "amount in ETH": 0.2,
+    "amount in USD": 400.0
+  },
+  {
+    "tx_hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-02",
+    "tx_link": "https://etherscan.io/tx/0x2222222222222222222222222222222222222222222222222222222222222222",
+    "purpose": "Equipment",
+    "amount in ETH": 0.5,
+    "amount in USD": 1000.0
+  },
+  {
+    "tx_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "chain": "POLYGON",
+    "Time": "2025-08-03",
+    "tx_link": "https://polygonscan.com/tx/0x3333333333333333333333333333333333333333333333333333333333333333",
+    "purpose": "Cloud Services",
+    "amount in ETH": 1.2,
+    "amount in USD": 1800.0
+  },
+  {
+    "tx_hash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-04",
+    "tx_link": "https://etherscan.io/tx/0x4444444444444444444444444444444444444444444444444444444444444444",
+    "amount in ETH": 0.1,
+    "amount in USD": 150.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-05",
+    "tx_link": "https://etherscan.io/tx/0x5555555555555555555555555555555555555555555555555555555555555555",
+    "purpose": "Travel",
+    "amount in USD": 200.0
+  },
+  {
+    "chain": "ETHEREUM",
+    "Time": "2025-08-06",
+    "tx_link": "https://etherscan.io/tx/",
+    "purpose": "Snacks",
+    "amount in ETH": 0.3,
+    "amount in USD": 250.0
+  },
+  {
+    "Time": "2025-08-07",
+    "purpose": "Software",
+    "amount in ETH": 0.4,
+    "amount in USD": 300.0,
+    "chain": "ETHEREUM"
+  },
+  {
+    "tx_hash": "0x7777777777777777777777777777777777777777777777777777777777777777",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-08",
+    "tx_link": "https://etherscan.io/tx/0x7777777777777777777777777777777777777777777777777777777777777777",
+    "purpose": "Office",
+    "amount in ETH": 0.2
+  },
+  {
+    "tx_hash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-09",
+    "tx_link": "https://etherscan.io/tx/0x8888888888888888888888888888888888888888888888888888888888888888",
+    "amount in ETH": 0.25,
+    "amount in USD": 500.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x9999999999999999999999999999999999999999999999999999999999999999",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-10",
+    "tx_link": "https://optimistic.etherscan.io/tx/0x9999999999999999999999999999999999999999999999999999999999999999",
+    "purpose": "Laptop",
+    "amount in ETH": 0.6,
+    "amount in USD": 900.0
+  }
+]
+{"timestamp": "2025-05-29T17:40:32.711269", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+DEBUG: Generated API calls: []
+{"timestamp": "2025-05-29T17:42:29.659413", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+No API calls were generated from the input data
+DEBUG: Extracted data structure: [
+  {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-01",
+    "tx_link": "https://etherscan.io/tx/0x1111111111111111111111111111111111111111111111111111111111111111",
+    "purpose": "Sandwich",
+    "amount in ETH": 0.2,
+    "amount in USD": 400.0
+  },
+  {
+    "tx_hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-02",
+    "tx_link": "https://etherscan.io/tx/0x2222222222222222222222222222222222222222222222222222222222222222",
+    "purpose": "Equipment",
+    "amount in ETH": 0.5,
+    "amount in USD": 1000.0
+  },
+  {
+    "tx_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "chain": "POLYGON",
+    "Time": "2025-08-03",
+    "tx_link": "https://polygonscan.com/tx/0x3333333333333333333333333333333333333333333333333333333333333333",
+    "purpose": "Cloud Services",
+    "amount in ETH": 1.2,
+    "amount in USD": 1800.0
+  },
+  {
+    "tx_hash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-04",
+    "tx_link": "https://etherscan.io/tx/0x4444444444444444444444444444444444444444444444444444444444444444",
+    "amount in ETH": 0.1,
+    "amount in USD": 150.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-05",
+    "tx_link": "https://etherscan.io/tx/0x5555555555555555555555555555555555555555555555555555555555555555",
+    "purpose": "Travel",
+    "amount in USD": 200.0
+  },
+  {
+    "chain": "ETHEREUM",
+    "Time": "2025-08-06",
+    "tx_link": "https://etherscan.io/tx/",
+    "purpose": "Snacks",
+    "amount in ETH": 0.3,
+    "amount in USD": 250.0
+  },
+  {
+    "Time": "2025-08-07",
+    "purpose": "Software",
+    "amount in ETH": 0.4,
+    "amount in USD": 300.0,
+    "chain": "ETHEREUM"
+  },
+  {
+    "tx_hash": "0x7777777777777777777777777777777777777777777777777777777777777777",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-08",
+    "tx_link": "https://etherscan.io/tx/0x7777777777777777777777777777777777777777777777777777777777777777",
+    "purpose": "Office",
+    "amount in ETH": 0.2
+  },
+  {
+    "tx_hash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-09",
+    "tx_link": "https://etherscan.io/tx/0x8888888888888888888888888888888888888888888888888888888888888888",
+    "amount in ETH": 0.25,
+    "amount in USD": 500.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x9999999999999999999999999999999999999999999999999999999999999999",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-10",
+    "tx_link": "https://optimistic.etherscan.io/tx/0x9999999999999999999999999999999999999999999999999999999999999999",
+    "purpose": "Laptop",
+    "amount in ETH": 0.6,
+    "amount in USD": 900.0
+  }
+]
+{"timestamp": "2025-05-29T17:48:37.445191", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+DEBUG: Generated API calls: [
+  {
+    "method": "get_transaction",
+    "params": {
+      "tx_hash": "0x123..."
+    },
+    "category": "transaction",
+    "chain": "ETHEREUM"
+  },
+  {
+    "method": "get_receipt",
+    "params": {
+      "tx_hash": "0x123..."
+    },
+    "category": "transaction",
+    "chain": "ETHEREUM"
+  },
+  {
+    "method": "get_transaction",
+    "params": {
+      "tx_hash": "0x123456789abc..."
+    },
+    "category": "transaction",
+    "chain": "ETHEREUM"
+  },
+  {
+    "method": "get_receipt",
+    "params": {
+      "tx_hash": "0x123456789abc..."
+    },
+    "category": "transaction",
+    "chain": "ETHEREUM"
+  }
+]
+{"timestamp": "2025-05-29T17:51:13.405579", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 4}}}
+Generated 4 API calls
+Executing API call: get_transaction
+Error executing API call get_transaction: Invalid variable type: value should be str, int or float, got None of type <class 'NoneType'>
+Failed to execute get_transaction API call
+Error: Error executing API call get_transaction: Invalid variable type: value should be str, int or float, got None of type <class 'NoneType'>
+DEBUG: Extracted data structure: [
+  {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-01",
+    "tx_link": "https://etherscan.io/tx/0x1111111111111111111111111111111111111111111111111111111111111111",
+    "purpose": "Sandwich",
+    "amount in ETH": 0.2,
+    "amount in USD": 400.0
+  },
+  {
+    "tx_hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-02",
+    "tx_link": "https://etherscan.io/tx/0x2222222222222222222222222222222222222222222222222222222222222222",
+    "purpose": "Equipment",
+    "amount in ETH": 0.5,
+    "amount in USD": 1000.0
+  },
+  {
+    "tx_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "chain": "POLYGON",
+    "Time": "2025-08-03",
+    "tx_link": "https://polygonscan.com/tx/0x3333333333333333333333333333333333333333333333333333333333333333",
+    "purpose": "Cloud Services",
+    "amount in ETH": 1.2,
+    "amount in USD": 1800.0
+  },
+  {
+    "tx_hash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-04",
+    "tx_link": "https://etherscan.io/tx/0x4444444444444444444444444444444444444444444444444444444444444444",
+    "amount in ETH": 0.1,
+    "amount in USD": 150.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-05",
+    "tx_link": "https://etherscan.io/tx/0x5555555555555555555555555555555555555555555555555555555555555555",
+    "purpose": "Travel",
+    "amount in USD": 200.0
+  },
+  {
+    "chain": "ETHEREUM",
+    "Time": "2025-08-06",
+    "tx_link": "https://etherscan.io/tx/",
+    "purpose": "Snacks",
+    "amount in ETH": 0.3,
+    "amount in USD": 250.0
+  },
+  {
+    "Time": "2025-08-07",
+    "purpose": "Software",
+    "amount in ETH": 0.4,
+    "amount in USD": 300.0,
+    "chain": "ETHEREUM"
+  },
+  {
+    "tx_hash": "0x7777777777777777777777777777777777777777777777777777777777777777",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-08",
+    "tx_link": "https://etherscan.io/tx/0x7777777777777777777777777777777777777777777777777777777777777777",
+    "purpose": "Office",
+    "amount in ETH": 0.2
+  },
+  {
+    "tx_hash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-09",
+    "tx_link": "https://etherscan.io/tx/0x8888888888888888888888888888888888888888888888888888888888888888",
+    "amount in ETH": 0.25,
+    "amount in USD": 500.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x9999999999999999999999999999999999999999999999999999999999999999",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-10",
+    "tx_link": "https://optimistic.etherscan.io/tx/0x9999999999999999999999999999999999999999999999999999999999999999",
+    "purpose": "Laptop",
+    "amount in ETH": 0.6,
+    "amount in USD": 900.0
+  }
+]
+{"timestamp": "2025-05-29T18:20:38.428366", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+DEBUG: Generated API calls: []
+{"timestamp": "2025-05-29T18:22:16.694639", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+No API calls were generated from the input data
+DEBUG: Extracted data structure: [
+  {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-01",
+    "tx_link": "https://etherscan.io/tx/0x1111111111111111111111111111111111111111111111111111111111111111",
+    "purpose": "Sandwich",
+    "amount in ETH": 0.2,
+    "amount in USD": 400.0
+  },
+  {
+    "tx_hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-02",
+    "tx_link": "https://etherscan.io/tx/0x2222222222222222222222222222222222222222222222222222222222222222",
+    "purpose": "Equipment",
+    "amount in ETH": 0.5,
+    "amount in USD": 1000.0
+  },
+  {
+    "tx_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "chain": "POLYGON",
+    "Time": "2025-08-03",
+    "tx_link": "https://polygonscan.com/tx/0x3333333333333333333333333333333333333333333333333333333333333333",
+    "purpose": "Cloud Services",
+    "amount in ETH": 1.2,
+    "amount in USD": 1800.0
+  },
+  {
+    "tx_hash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-04",
+    "tx_link": "https://etherscan.io/tx/0x4444444444444444444444444444444444444444444444444444444444444444",
+    "amount in ETH": 0.1,
+    "amount in USD": 150.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-05",
+    "tx_link": "https://etherscan.io/tx/0x5555555555555555555555555555555555555555555555555555555555555555",
+    "purpose": "Travel",
+    "amount in USD": 200.0
+  },
+  {
+    "chain": "ETHEREUM",
+    "Time": "2025-08-06",
+    "tx_link": "https://etherscan.io/tx/",
+    "purpose": "Snacks",
+    "amount in ETH": 0.3,
+    "amount in USD": 250.0
+  },
+  {
+    "Time": "2025-08-07",
+    "purpose": "Software",
+    "amount in ETH": 0.4,
+    "amount in USD": 300.0,
+    "chain": "ETHEREUM"
+  },
+  {
+    "tx_hash": "0x7777777777777777777777777777777777777777777777777777777777777777",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-08",
+    "tx_link": "https://etherscan.io/tx/0x7777777777777777777777777777777777777777777777777777777777777777",
+    "purpose": "Office",
+    "amount in ETH": 0.2
+  },
+  {
+    "tx_hash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-09",
+    "tx_link": "https://etherscan.io/tx/0x8888888888888888888888888888888888888888888888888888888888888888",
+    "amount in ETH": 0.25,
+    "amount in USD": 500.0,
+    "purpose": "general"
+  },
+  {
+    "tx_hash": "0x9999999999999999999999999999999999999999999999999999999999999999",
+    "chain": "ETHEREUM",
+    "Time": "2025-08-10",
+    "tx_link": "https://optimistic.etherscan.io/tx/0x9999999999999999999999999999999999999999999999999999999999999999",
+    "purpose": "Laptop",
+    "amount in ETH": 0.6,
+    "amount in USD": 900.0
+  }
+]
+{"timestamp": "2025-05-29T18:28:31.277805", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+DEBUG: Generated API calls: []
+{"timestamp": "2025-05-29T18:29:42.973564", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+No API calls were generated from the input data

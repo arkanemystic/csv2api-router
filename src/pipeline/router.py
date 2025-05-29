@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Dict, List, Union, Any, Optional
 import aiohttp
-from ..utils.logger import log_info, log_error, log_debug
+from src.utils.logger import log_info, log_error, log_debug
 
 class APIRouter:
     """Routes and executes blockchain API calls."""
@@ -205,17 +205,30 @@ async def route_api_calls(api_calls: Union[Dict[str, Any], List[Dict[str, Any]]]
         batch_mode: Whether to execute calls in batch mode
         
     Returns:
-        API call results
+        API call results. Returns empty list if no API calls provided.
     """
+    # Handle empty input case
+    if not api_calls:
+        log_info("No API calls to process")
+        return []
+
     router = APIRouter(api_key=api_key)
     
     if isinstance(api_calls, dict):
         api_calls = [api_calls]
         batch_mode = False
     
+    if not api_calls:  # Handle case where api_calls was an empty dict
+        log_info("No API calls to process")
+        return []
+    
     if batch_mode:
         results = await router.execute_batch(api_calls)
     else:
+        # Only process first call in interactive mode, but handle empty list
+        if not api_calls:
+            log_info("No API calls to process")
+            return []
         results = await router.execute_interactive(api_calls[0])
     
     return results

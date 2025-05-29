@@ -19,22 +19,35 @@ class LLMProcessor:
     
     def _create_prompt(self, data: Dict) -> str:
         """Create a prompt for the LLM based on the input data."""
-        prompt = "Analyze the following blockchain data and identify required API calls:\n\n"
-        
-        # Add structured data
-        if 'tx_hash' in data:
-            prompt += f"Transaction Hash: {data['tx_hash']}\n"
-        if 'chain' in data:
-            prompt += f"Blockchain: {data['chain']}\n"
+        tx_hash = data.get('tx_hash')
+        if not tx_hash:
+            return '''{"api_calls": []}'''
             
-        # Add any raw text for processing
-        if 'raw_text' in data:
-            prompt += f"\nRaw Text: {data['raw_text']}\n"
-            
-        # Add instruction for output format
-        prompt += "\nIdentify required API calls in the following JSON format:\n"
-        prompt += '{\n  "api_calls": [\n    {"method": "method_name", "params": {}}\n  ]\n}'
-        prompt += "\nOnly return valid JSON, no other text."
+        prompt = f"""Given this transaction hash: {tx_hash}
+
+Generate exactly these two API calls using that exact hash:
+1. get_transaction call to fetch transaction details
+2. get_receipt call to get transaction status
+
+Return this exact JSON format:
+{{
+  "api_calls": [
+    {{
+      "method": "get_transaction",
+      "params": {{
+        "tx_hash": "{tx_hash}"
+      }}
+    }},
+    {{
+      "method": "get_receipt",
+      "params": {{
+        "tx_hash": "{tx_hash}"
+      }}
+    }}
+  ]
+}}
+
+Return only the JSON above. No other text. Use the exact hash shown."""
         
         return prompt
     
@@ -46,7 +59,8 @@ class LLMProcessor:
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.1
+                    "temperature": 0.0,  # Use 0 temperature for deterministic responses
+                    "num_predict": 512   # Ensure we get enough tokens for the response
                 }
             }
             
@@ -80,9 +94,11 @@ class LLMProcessor:
         for data in extracted_data:
             try:
                 prompt = self._create_prompt(data)
+                self.logger.info(f"DEBUG: LLM Prompt:\n{prompt}")
                 
                 # Call local Ollama instance
                 response_text = await self._call_ollama(prompt)
+                self.logger.info(f"DEBUG: LLM Response:\n{response_text}")
                 
                 # Parse the response
                 try:
@@ -93,14 +109,24 @@ class LLMProcessor:
                         json_str = response_text[json_start:json_end]
                         result = json.loads(json_str)
                     else:
+                        self.logger.error(f"No JSON found in LLM response: {response_text}")
                         raise json.JSONDecodeError("No JSON found in response", response_text, 0)
                     
                     api_calls = result.get('api_calls', [])
+                    self.logger.info(f"DEBUG: Parsed API calls: {json.dumps(api_calls, indent=2)}")
                     
                     # Validate and filter API calls
                     validated_calls = []
                     for call in api_calls:
                         method = call.get('method')
+                        if not method:
+                            self.logger.error(f"Missing method in API call: {call}")
+                            continue
+                            
+                        if not self.validate_api_call(call):
+                            self.logger.error(f"Invalid API call parameters: {call}")
+                            continue
+                            
                         category = next((cat for cat, methods in self.supported_apis.items() 
                                       if method in methods), None)
                         
@@ -110,16 +136,17 @@ class LLMProcessor:
                             call['chain'] = data.get('chain', 'ETHEREUM')
                             validated_calls.append(call)
                         else:
-                            self.logger.warning(f"Unsupported API method identified: {method}")
+                            self.logger.error(f"Unsupported API method identified: {method}")
                     
                     all_api_calls.extend(validated_calls)
                     
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
                     self.logger.error(f"Failed to parse LLM response as JSON: {response_text}")
+                    self.logger.error(f"JSON Error: {str(e)}")
                     continue
                     
             except Exception as e:
-                self.logger.error(f"Error processing data with LLM: {e}")
+                self.logger.error(f"Error processing data with LLM: {str(e)}")
                 continue
         
         return all_api_calls

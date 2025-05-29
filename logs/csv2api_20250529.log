@@ -1,0 +1,5 @@
+2025-05-29 14:20:38,428 - csv2api - INFO - {"timestamp": "2025-05-29T18:20:38.428366", "event_type": "extraction", "status": "success", "details": {"source": "/Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv", "extracted_data": {"count": 10}}}
+2025-05-29 14:20:38,428 - csv2api - INFO - Extracted 10 items from /Users/devrashie/Documents/csProjects/csv2api-router/dataset/ten_case_test.csv
+2025-05-29 14:22:16,693 - csv2api - INFO - DEBUG: Generated API calls: []
+2025-05-29 14:22:16,694 - csv2api - INFO - {"timestamp": "2025-05-29T18:22:16.694639", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
+2025-05-29 14:22:16,694 - csv2api - INFO - No API calls were generated from the input data

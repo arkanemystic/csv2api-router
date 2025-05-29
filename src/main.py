@@ -6,10 +6,10 @@ from typing import Dict, List, Union, Optional
 import os
 from dotenv import load_dotenv
 
-from pipeline.extractor import extract_api_calls
-from pipeline.processor import process_with_llm
-from pipeline.router import route_api_calls
-from utils.logger import (
+from src.pipeline.extractor import extract_api_calls
+from src.pipeline.processor import process_with_llm
+from src.pipeline.router import route_api_calls
+from src.utils.logger import (
     log_info, 
     log_error,
     log_extraction,
@@ -34,20 +34,36 @@ async def process_file(file_path: Union[str, Path],
     try:
         # Extract data from file
         extracted_data = extract_api_calls(file_path)
+        log_info(f"DEBUG: Extracted data structure: {json.dumps(extracted_data, indent=2)}")
         log_extraction(str(file_path), {'count': len(extracted_data)})
         
         if interactive:
             log_info(f"Extracted {len(extracted_data)} items from {file_path}")
             
         # Process with LLM
-        api_calls = await process_with_llm(extracted_data)
-        log_processing(
-            {'extracted_count': len(extracted_data)},
-            {'api_calls_count': len(api_calls)}
-        )
+        try:
+            api_calls = await process_with_llm(extracted_data)
+            log_info(f"DEBUG: Generated API calls: {json.dumps(api_calls, indent=2)}")
+            log_processing(
+                {'extracted_count': len(extracted_data)},
+                {'api_calls_count': len(api_calls)}
+            )
+        except Exception as e:
+            log_error(f"DEBUG: Error in LLM processing: {str(e)}")
+            log_error(f"DEBUG: Last extracted data item: {json.dumps(extracted_data[-1] if extracted_data else None, indent=2)}")
+            raise
         
+        if not api_calls:
+            log_info("No API calls were generated from the input data")
+            return
+
         if interactive:
             log_info(f"Generated {len(api_calls)} API calls")
+            # Debug log showing all API calls
+            for call in api_calls:
+                log_info(f"API Call: {call['method']}")
+                log_info(f"  Chain: {call.get('chain', 'ETHEREUM')}")
+                log_info(f"  Params: {json.dumps(call.get('params', {}), indent=2)}")
             
         # Execute API calls
         results = await route_api_calls(
@@ -55,6 +71,10 @@ async def process_file(file_path: Union[str, Path],
             api_key=api_key,
             batch_mode=not interactive
         )
+
+        if not results:
+            log_info("No API calls were executed")
+            return
         
         if interactive:
             # Print results in a readable format
