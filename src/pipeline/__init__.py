@@ -1,1 +1,3 @@
-# This file is intentionally left blank.
+"""
+Pipeline module for CSV processing and API generation.
+"""

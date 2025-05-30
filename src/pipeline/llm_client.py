@@ -21,7 +21,8 @@ SUPPORTED_APIS = {
 
 def generate_single_api_call(method: str, tx_hash: str, chain: str, debug: bool = False) -> dict:
     """Generate a single API call using Ollama."""
-    prompt = f'Generate a JSON object for a blockchain API call with method "{method}" and transaction hash "{tx_hash}" for {chain} chain. Output only the JSON object, no explanations or markdown.'
+    prompt = f"""<system>You are a JSON API call generator. Output only valid JSON objects, no explanations or markdown.</system>
+<user>Generate a JSON object for a blockchain API call with method "{method}" and transaction hash "{tx_hash}" for {chain} chain. The JSON should have a "method" field and a "params" object containing the tx_hash.</user>"""
     
     try:
         # Call Ollama CLI
@@ -40,13 +41,25 @@ def generate_single_api_call(method: str, tx_hash: str, chain: str, debug: bool 
         json_str = result.stdout.strip()
         # Remove any markdown code block markers
         json_str = re.sub(r'```json\s*|\s*```', '', json_str)
-        # Extract the largest possible JSON object
+        
+        # Find the first complete JSON object
         first_brace = json_str.find('{')
-        last_brace = json_str.rfind('}')
-        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-            json_str = json_str[first_brace:last_brace+1]
+        if first_brace == -1:
+            logger.error("No JSON object found in output")
+            return None
+            
+        # Find matching closing brace
+        brace_count = 0
+        for i in range(first_brace, len(json_str)):
+            if json_str[i] == '{':
+                brace_count += 1
+            elif json_str[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    json_str = json_str[first_brace:i+1]
+                    break
         else:
-            logger.error(f"Could not find JSON object in output: {json_str}")
+            logger.error("Could not find complete JSON object")
             return None
         
         if debug:
@@ -64,8 +77,16 @@ def generate_single_api_call(method: str, tx_hash: str, chain: str, debug: bool 
             raise ValueError("API call must include 'params' field")
         if not isinstance(api_call["params"], dict):
             raise ValueError("params must be a JSON object")
+            
+        # Ensure tx_hash is in params
         if "tx_hash" not in api_call["params"]:
-            raise ValueError("params must include 'tx_hash' field")
+            # Try to find tx_hash in any of the common parameter names
+            for key in ["tx_hash", "transactionHash", "txn_hash", "hash", "txnHash"]:
+                if key in api_call["params"]:
+                    api_call["params"]["tx_hash"] = api_call["params"][key]
+                    break
+            else:
+                raise ValueError("params must include 'tx_hash' field")
         
         return api_call
         

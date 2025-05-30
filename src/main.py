@@ -1,168 +1,78 @@
-import asyncio
 import argparse
+import logging
 import json
 from pathlib import Path
-from typing import Dict, List, Union, Optional
-import os
-from dotenv import load_dotenv
+from datetime import datetime
+from src.pipeline.csv_cleaner import clean_and_classify_csv
+from src.pipeline.batch_caller import for_loop_caller, get_successful_results
+from src.pipeline.api_functions import tag_as_expense, get_transaction, get_receipt
 
-from src.pipeline.extractor import extract_api_calls
-from src.pipeline.processor import process_with_llm
-from src.pipeline.router import route_api_calls
-from src.utils.logger import (
-    log_info, 
-    log_error,
-    log_extraction,
-    log_processing,
-    log_api_call
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-
-async def process_file(file_path: Union[str, Path], 
-                      interactive: bool = False,
-                      api_key: Optional[str] = None) -> None:
-    """
-    Process a single file through the pipeline.
-    
-    Args:
-        file_path: Path to the input file
-        interactive: Whether to run in interactive mode
-        api_key: Optional API key for blockchain explorers
-    """
-    try:
-        # Extract data from file
-        extracted_data = extract_api_calls(file_path)
-        log_info(f"DEBUG: Extracted data structure: {json.dumps(extracted_data, indent=2)}")
-        log_extraction(str(file_path), {'count': len(extracted_data)})
-        
-        if interactive:
-            log_info(f"Extracted {len(extracted_data)} items from {file_path}")
-            
-        # Process with LLM
-        try:
-            api_calls = await process_with_llm(extracted_data)
-            log_info(f"DEBUG: Generated API calls: {json.dumps(api_calls, indent=2)}")
-            log_processing(
-                {'extracted_count': len(extracted_data)},
-                {'api_calls_count': len(api_calls)}
-            )
-        except Exception as e:
-            log_error(f"DEBUG: Error in LLM processing: {str(e)}")
-            log_error(f"DEBUG: Last extracted data item: {json.dumps(extracted_data[-1] if extracted_data else None, indent=2)}")
-            raise
-        
-        if not api_calls:
-            log_info("No API calls were generated from the input data")
-            return
-
-        if interactive:
-            log_info(f"Generated {len(api_calls)} API calls")
-            # Debug log showing all API calls
-            for call in api_calls:
-                log_info(f"API Call: {call['method']}")
-                log_info(f"  Chain: {call.get('chain', 'ETHEREUM')}")
-                log_info(f"  Params: {json.dumps(call.get('params', {}), indent=2)}")
-            
-        # Execute API calls
-        results = await route_api_calls(
-            api_calls,
-            api_key=api_key,
-            batch_mode=not interactive
-        )
-
-        if not results:
-            log_info("No API calls were executed")
-            return
-        
-        if interactive:
-            # Print results in a readable format
-            for result in (results if isinstance(results, list) else [results]):
-                if result['success']:
-                    log_info(
-                        f"Successfully executed {result['method']} API call\n"
-                        f"Result: {json.dumps(result['result'], indent=2)}"
-                    )
-                else:
-                    log_error(
-                        f"Failed to execute {result['method']} API call\n"
-                        f"Error: {result['error']}"
-                    )
-        else:
-            # Log results without printing
-            for result in (results if isinstance(results, list) else [results]):
-                log_api_call(
-                    method=result['method'],
-                    params=result.get('params', {}),
-                    response=result.get('result'),
-                    error=result.get('error')
-                )
-                
-    except Exception as e:
-        log_error(f"Error processing file {file_path}: {str(e)}")
-        if interactive:
-            print(f"Error: {str(e)}")
-
-async def process_directory(directory: Union[str, Path],
-                          pattern: str = "*.csv",
-                          interactive: bool = False,
-                          api_key: Optional[str] = None) -> None:
-    """
-    Process all matching files in a directory.
-    
-    Args:
-        directory: Directory path to process
-        pattern: Glob pattern for matching files
-        interactive: Whether to run in interactive mode
-        api_key: Optional API key for blockchain explorers
-    """
-    directory = Path(directory)
-    for file_path in directory.glob(pattern):
-        if interactive:
-            print(f"\nProcessing {file_path}...")
-        await process_file(file_path, interactive, api_key)
+# Map of function names to actual functions
+API_FUNCTIONS = {
+    'tag_as_expense': tag_as_expense,
+    'get_transaction': get_transaction,
+    'get_receipt': get_receipt
+}
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Process CSV and text files to extract and execute blockchain API calls"
-    )
-    parser.add_argument(
-        "path",
-        help="Path to file or directory to process"
-    )
-    parser.add_argument(
-        "--interactive",
-        "-i",
-        action="store_true",
-        help="Run in interactive mode with detailed output"
-    )
-    parser.add_argument(
-        "--pattern",
-        "-p",
-        default="*.csv",
-        help="File pattern to match when processing directories (default: *.csv)"
-    )
-    parser.add_argument(
-        "--api-key",
-        help="API key for blockchain explorers. Can also be set via BLOCKCHAIN_API_KEY env var"
-    )
-    
+    parser = argparse.ArgumentParser(description='Process CSV file and generate API calls')
+    parser.add_argument('-i', '--input', required=True, help='Input CSV file path')
+    parser.add_argument('-w', '--workers', type=int, default=4, help='Number of worker threads')
     args = parser.parse_args()
     
-    # Get API key from args or environment
-    api_key = args.api_key or os.getenv("BLOCKCHAIN_API_KEY")
+    input_path = Path(args.input)
+    if not input_path.exists():
+        logger.error(f"Input file not found: {input_path}")
+        return
     
-    path = Path(args.path)
-    if path.is_file():
-        asyncio.run(process_file(path, args.interactive, api_key))
-    elif path.is_dir():
-        asyncio.run(process_directory(path, args.pattern, args.interactive, api_key))
-    else:
-        print(f"Error: {args.path} does not exist")
-        return 1
-    
-    return 0
+    try:
+        # Step 1: Clean and classify CSV
+        function_name, cleaned_rows = clean_and_classify_csv(str(input_path))
+        logger.info(f"Classified CSV as {function_name} with {len(cleaned_rows)} rows")
+        
+        # Get the appropriate API function
+        api_function = API_FUNCTIONS.get(function_name)
+        if not api_function:
+            logger.error(f"Unknown function: {function_name}")
+            return
+        
+        # Step 2: Process rows using the batch caller
+        results, failed_rows = for_loop_caller(
+            cleaned_rows=cleaned_rows,
+            api_function=api_function,
+            max_retries=3
+        )
+        
+        # Get successful results
+        successful_results = get_successful_results(results)
+        
+        # Log summary
+        if successful_results:
+            logger.info(f"Successfully processed {len(successful_results)} rows")
+            logger.info(f"Failed rows: {failed_rows}")
+            logger.info({
+                "timestamp": datetime.utcnow().isoformat(),
+                "event_type": "processing",
+                "status": "success",
+                "details": {
+                    "input": {"extracted_count": len(cleaned_rows)},
+                    "output": {"processed_count": len(successful_results)},
+                    "failed_rows": failed_rows
+                }
+            })
+        else:
+            logger.info("No rows were successfully processed")
+            
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        return
 
 if __name__ == "__main__":
-    exit(main())
+    main()
