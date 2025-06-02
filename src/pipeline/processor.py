@@ -166,6 +166,92 @@ class PipelineProcessor:
             
         return all(param in params for param in required_params[method])
 
+    def process_natural_language(self, prompt: str, csv_data: List[Dict[str, Any]]) -> tuple[str, List[Dict[str, Any]]]:
+        """
+        Process a natural language prompt and CSV data to determine API function and format data.
+        
+        Args:
+            prompt: Natural language prompt from client (e.g., "Tag these as expenses")
+            csv_data: List of dictionaries containing CSV rows
+            
+        Returns:
+            Tuple of (function_name, list of cleaned parameter dictionaries)
+        """
+        # Extract function name from prompt
+        function_name = self._infer_function_from_prompt(prompt.lower())
+        if not function_name:
+            raise ValueError("Could not determine function from prompt")
+            
+        # Format CSV data for the function
+        formatted_rows = []
+        for row in csv_data:
+            try:
+                if 'tx_link' in row:
+                    # Extract tx_hash and chain from tx_link using CSVParser's helper
+                    parser = CSVParser("")  # Empty path since we just need the helper
+                    tx_hash, chain = parser._extract_tx_hash_and_chain(row['tx_link'])
+                    if not tx_hash:
+                        logger.warning(f"Could not extract tx_hash from tx_link: {row['tx_link']}")
+                        continue
+                else:
+                    logger.warning("Row missing required tx_link field")
+                    continue
+
+                # Build parameters based on function requirements
+                if function_name == 'tag_as_expense':
+                    params = {
+                        'tx_hash': tx_hash,
+                        'chain': chain,
+                        'expense_category': row.get('purpose', 'Unspecified'),
+                        'amount_in_eth': float(row['amount in ETH']) if 'amount in ETH' in row else None,
+                        'amount_in_usd': float(row['amount in USD']) if 'amount in USD' in row else None
+                    }
+                elif function_name in ['get_transaction', 'get_receipt']:
+                    params = {
+                        'tx_hash': tx_hash,
+                        'chain': chain
+                    }
+                else:
+                    logger.warning(f"Unsupported function: {function_name}")
+                    continue
+                
+                formatted_rows.append(params)
+                
+            except Exception as e:
+                logger.error(f"Error processing row: {str(e)}")
+                continue
+                
+        if not formatted_rows:
+            raise ValueError("No valid rows could be processed")
+            
+        return function_name, formatted_rows
+
+    def _infer_function_from_prompt(self, prompt: str) -> Optional[str]:
+        """
+        Infer the API function to call based on the natural language prompt.
+        
+        Args:
+            prompt: Lowercase natural language prompt
+            
+        Returns:
+            Function name or None if no match
+        """
+        # Simple keyword mapping - could be expanded to use LLM if needed
+        keyword_map = {
+            'expense': 'tag_as_expense',
+            'tag': 'tag_as_expense',
+            'transaction detail': 'get_transaction',
+            'transaction info': 'get_transaction',
+            'receipt': 'get_receipt',
+            'gas': 'get_receipt'
+        }
+        
+        for keyword, func in keyword_map.items():
+            if keyword in prompt:
+                return func
+                
+        return None
+
 # Helper function for external use
 async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
     """
