@@ -220,21 +220,19 @@ def generate_api_call_list_from_prompt_and_csv(prompt: str, csv_data: list, debu
     import re
     system_prompt = (
         "You are a smart API assistant. "
-        "Given a user instruction and a list of messy CSV rows, "
-        "output a JSON array where each item is an API call: "
-        "{\"function\": <function_name>, \"params\": {...}}. "
-        "For each row, infer which API function(s) to call and map/clean the columns as needed. "
-        "If a row contains a wallet address, call 'get_balance' and 'get_transfers'. "
-        "If a row contains a contract address, call 'get_abi' and 'get_events'. "
-        "If an event name is present, include it in the 'get_events' call. "
-        "Ignore tx_hash unless specifically requested. Output only valid JSON, no explanations.\n"
+        "Given a user instruction and a list of messy CSV rows, output a JSON array. "
+        "Each item should be an API call: {'function': <function_name>, 'params': {...}}. "
+        "For each row: "
+        "- If the row has a valid contract address (42 chars, starts with 0x, hex), call 'get_abi' with 'contract_address'. "
+        "- If the row has a valid transaction hash (66 chars, starts with 0x, hex), call 'get_receipt' with 'tx_hash'. "
+        "- Only call 'get_events' if the user prompt specifically requests event logs and the row has both a valid contract address and an event signature. "
+        "- Ignore rows with missing, empty, or invalid hashes/addresses. "
+        "Do NOT call get_events unless the user prompt specifically requests event logs for those contracts and events. "
+        "Example input:\n"
+        "[{'contract_address': '0xabc...', 'event thingy': 'Transfer(address,uint256)'}, ...]\n"
         "Example output:\n"
-        "[\n"
-        "  {\"function\": \"get_balance\", \"params\": {\"address\": \"0xabc...\"}},\n"
-        "  {\"function\": \"get_transfers\", \"params\": {\"address\": \"0xabc...\"}},\n"
-        "  {\"function\": \"get_abi\", \"params\": {\"contract_address\": \"0x123...\"}},\n"
-        "  {\"function\": \"get_events\", \"params\": {\"contract_address\": \"0x123...\", \"event_name\": \"Transfer(address,uint256)\"}}\n"
-        "]"
+        "[{'function': 'get_abi', 'params': {'contract_address': '0xabc...'}}]\n"
+        "Output only valid JSON, no explanations."
     )
     user_prompt = f"""Instruction: {prompt}\nCSV Data (as JSON list):\n{json.dumps(csv_data, indent=2)}"""
     full_prompt = f"<system>{system_prompt}</system>\n<user>{user_prompt}</user>"
@@ -279,8 +277,17 @@ def generate_api_call_list_from_prompt_and_csv(prompt: str, csv_data: list, debu
         try:
             api_calls = json.loads(json_str)
         except Exception as e:
-            logger.error(f"Failed to parse LLM JSON: {e}")
-            return None, f"Failed to parse LLM JSON: {e}. Raw output: {json_str}"
+            # Try to fix single-quoted dicts to valid JSON
+            import ast
+            try:
+                # Use ast.literal_eval to parse Python dict/list safely
+                api_calls = ast.literal_eval(json_str)
+                # Convert back to JSON string and parse to ensure all keys/values are valid JSON
+                api_calls = json.loads(json.dumps(api_calls))
+                logger.warning("LLM output was not valid JSON, but was parsed as Python and converted to JSON.")
+            except Exception as e2:
+                logger.error(f"Failed to parse LLM JSON: {e2}")
+                return None, f"Failed to parse LLM JSON: {e2}. Raw output: {json_str}"
         if not isinstance(api_calls, list):
             logger.error("LLM output is not a list")
             return None, "LLM output is not a list. Raw output: " + str(api_calls)
