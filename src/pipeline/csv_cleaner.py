@@ -1,7 +1,7 @@
 import csv
 import logging
 from typing import List, Dict, Tuple, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -41,21 +41,55 @@ def detect_chain_from_url(url: str) -> str:
         return "ETHEREUM"
 
 def extract_tx_hash_from_url(url: str) -> Optional[str]:
-    """Extract transaction hash from explorer URL."""
+    """Extract transaction hash from various URL formats."""
     if not url:
         return None
         
     try:
-        # Split URL and find the last part that starts with 0x
-        parts = url.split('/')
-        tx_hash = next((p for p in parts if p.startswith('0x')), None)
+        # Clean the URL first
+        url = url.strip()
         
-        # Validate hash format
-        if tx_hash and len(tx_hash) == 66:  # 0x + 64 hex chars
-            return tx_hash
+        # Handle direct tx_hash input
+        if url.startswith('0x') and len(url) == 66:
+            return url
+            
+        # Handle malformed URLs (missing protocol)
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            
+        # Handle URL formats
+        parsed = urlparse(url)
+        path = parsed.path.strip('/')
+        
+        # Try to find tx_hash in path
+        parts = path.split('/')
+        for part in parts:
+            # Clean the part and check if it's a valid hash
+            part = part.strip()
+            if part.startswith('0x') and len(part) == 66:
+                return part
+                
+        # Try to find tx_hash in query parameters
+        query = parse_qs(parsed.query)
+        for param in query.values():
+            for value in param:
+                # Clean the value and check if it's a valid hash
+                value = value.strip()
+                if value.startswith('0x') and len(value) == 66:
+                    return value
+                    
+        # Try to find tx_hash in the entire URL
+        # This handles cases where the URL might be malformed but still contains a valid hash
+        words = url.split()
+        for word in words:
+            word = word.strip()
+            if word.startswith('0x') and len(word) == 66:
+                return word
+                    
         return None
+        
     except Exception as e:
-        logger.warning(f"Error extracting tx_hash from {url}: {e}")
+        logger.warning(f"Error extracting tx_hash from URL: {e}")
         return None
 
 def determine_function_type(row: Dict) -> FunctionType:
@@ -64,11 +98,16 @@ def determine_function_type(row: Dict) -> FunctionType:
     Uses heuristics to decide without LLM.
     """
     # If row has purpose and amount fields, it's likely an expense
-    if 'purpose' in row and row['purpose'] and any(k.startswith('amount') for k in row.keys()):
+    has_purpose = 'purpose' in row and row['purpose']
+    has_amount = any(k.startswith('amount') for k in row.keys())
+    has_tx_hash = 'tx_hash' in row and row['tx_hash']
+    
+    # If we have a valid tx_hash and either purpose or amount, it's an expense
+    if has_tx_hash and (has_purpose or has_amount):
         return FunctionType.TAG_AS_EXPENSE
         
-    # If row has tx_hash but no purpose/amount, get transaction details
-    if 'tx_hash' in row and row['tx_hash']:
+    # If we have a tx_hash but no purpose/amount, get transaction details
+    if has_tx_hash:
         return FunctionType.GET_TRANSACTION
         
     # Default to getting transaction details
@@ -82,45 +121,101 @@ def clean_and_classify_csv(file_path: str) -> Tuple[str, List[Dict]]:
     cleaned_rows = []
     function_counts = {ft: 0 for ft in FunctionType}
     
+    logger.info(f"Starting to process CSV file: {file_path}")
+    
     with open(file_path, 'r') as f:
         reader = csv.DictReader(f)
+        total_rows = 0
+        skipped_rows = 0
+        
         for row_num, row in enumerate(reader, 1):
-            cleaned = {}
-            
-            # Clean and convert values
-            for k, v in row.items():
-                if v is None:
-                    cleaned[k] = None
-                else:
-                    val = v.strip()
-                    # Convert amounts to float
-                    if k.lower().startswith('amount'):
-                        try:
-                            val = val.replace('$', '').replace('USD', '').replace('ETH', '').strip()
-                            cleaned[k] = float(val) if val else None
-                        except Exception:
-                            logger.warning(f"Row {row_num}: Could not convert {k}='{v}' to float")
-                            cleaned[k] = None
-                    else:
-                        cleaned[k] = val if val else None
-            
-            # Extract tx_hash and chain from tx_link if present
-            if 'tx_link' in cleaned and cleaned['tx_link']:
-                tx_hash = extract_tx_hash_from_url(cleaned['tx_link'])
-                if tx_hash:
-                    cleaned['tx_hash'] = tx_hash
-                    cleaned['chain'] = detect_chain_from_url(cleaned['tx_link'])
-            
-            # Skip rows without tx_hash
-            if 'tx_hash' not in cleaned or not cleaned['tx_hash']:
-                logger.warning(f"Row {row_num}: No valid tx_hash found")
-                continue
+            total_rows += 1
+            try:
+                logger.debug(f"Processing row {row_num}: {row}")
+                cleaned = {}
                 
-            # Determine function type for this row
-            function_type = determine_function_type(cleaned)
-            function_counts[function_type] += 1
-            
-            cleaned_rows.append(cleaned)
+                # Clean and convert values
+                for k, v in row.items():
+                    if v is None or v.strip() == "":
+                        cleaned[k] = None
+                    else:
+                        val = v.strip()
+                        # Convert amounts to float
+                        if k.lower().startswith('amount'):
+                            try:
+                                # Handle various amount formats
+                                val = val.replace('USD', '').replace('ETH', '').replace('$', '').strip()
+                                # Remove any currency symbols and commas
+                                val = ''.join(c for c in val if c.isdigit() or c == '.')
+                                cleaned[k] = float(val) if val else None
+                            except Exception as e:
+                                logger.warning(f"Row {row_num}: Could not convert {k}='{v}' to float: {str(e)}")
+                                cleaned[k] = None
+                        else:
+                            cleaned[k] = val
+                
+                logger.debug(f"Row {row_num} after cleaning: {cleaned}")
+                
+                # Extract tx_hash and chain from tx_link if present
+                tx_hash = None
+                chain = "ETHEREUM"  # Default chain
+                
+                if 'tx_link' in cleaned and cleaned['tx_link']:
+                    logger.debug(f"Row {row_num}: Found tx_link: {cleaned['tx_link']}")
+                    tx_hash = extract_tx_hash_from_url(cleaned['tx_link'])
+                    if tx_hash:
+                        logger.debug(f"Row {row_num}: Extracted tx_hash from tx_link: {tx_hash}")
+                        cleaned['tx_hash'] = tx_hash
+                        chain = detect_chain_from_url(cleaned['tx_link'])
+                        cleaned['chain'] = chain
+                    else:
+                        logger.warning(f"Row {row_num}: Could not extract tx_hash from tx_link: {cleaned['tx_link']}")
+                
+                # If no tx_hash from tx_link, try to find it in other columns
+                if not tx_hash:
+                    logger.debug(f"Row {row_num}: Searching for tx_hash in other columns")
+                    # Look for tx_hash in other columns
+                    for col, val in cleaned.items():
+                        if val and isinstance(val, str) and val.startswith('0x') and len(val) == 66:
+                            tx_hash = val
+                            cleaned['tx_hash'] = tx_hash
+                            logger.debug(f"Row {row_num}: Found tx_hash in column {col}: {tx_hash}")
+                            break
+                
+                # Skip rows without tx_hash
+                if not tx_hash:
+                    logger.warning(f"Row {row_num}: No valid tx_hash found in any column")
+                    skipped_rows += 1
+                    continue
+                
+                # Ensure chain is set
+                cleaned['chain'] = chain
+                
+                # Set default purpose if missing
+                if 'purpose' not in cleaned or not cleaned['purpose']:
+                    cleaned['purpose'] = 'General'
+                    logger.debug(f"Row {row_num}: Set default purpose to 'General'")
+                
+                # Determine function type for this row
+                function_type = determine_function_type(cleaned)
+                function_counts[function_type] += 1
+                logger.debug(f"Row {row_num}: Determined function type: {function_type.value}")
+                
+                # Add the row to cleaned rows
+                cleaned_rows.append(cleaned)
+                logger.info(f"Row {row_num}: Successfully processed and added to cleaned rows")
+                
+            except Exception as e:
+                logger.error(f"Error processing row {row_num}: {str(e)}")
+                skipped_rows += 1
+                continue
+    
+    # Log summary
+    logger.info(f"CSV processing summary:")
+    logger.info(f"Total rows processed: {total_rows}")
+    logger.info(f"Rows skipped: {skipped_rows}")
+    logger.info(f"Rows successfully processed: {len(cleaned_rows)}")
+    logger.info(f"Function type counts: {function_counts}")
     
     # Choose the most common function type
     if cleaned_rows:

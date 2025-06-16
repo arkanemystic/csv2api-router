@@ -6,15 +6,11 @@
 {
   "api_calls": [
     {
-      "method": "get_transaction",
+      "method": "tag_as_expense",
       "params": {
-        "tx_hash": "$TX_HASH"
-      }
-    },
-    {
-      "method": "get_receipt",
-      "params": {
-        "tx_hash": "$TX_HASH"
+        "tx_hash": "$TX_HASH",
+        "chain": "$CHAIN",
+        "expense_category": "general"
       }
     }
   ]
@@ -23,5 +19,5 @@
 // Requirements:
 // 1. Return only valid JSON
 // 2. Use the exact transaction hash shown above
-// 3. Include both get_transaction and get_receipt calls
+// 3. Include expense tagging for transactions
 // 4. No explanation text needed

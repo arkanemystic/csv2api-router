@@ -1,9 +1,6 @@
-aiohttp>=3.8.0
 pandas>=2.0.0
-openai>=1.0.0
-python-dotenv>=1.0.0
-regex>=2023.0.0
+llama-index>=0.9.0
 requests>=2.31.0
-numpy>=1.24.0
-pytest>=7.0.0
-setuptools>=65.0.0
+typing-extensions>=4.7.0
+python-dotenv>=1.0.0
+ollama>=0.1.27

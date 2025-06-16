@@ -10,161 +10,282 @@ from .batch_executor import BatchExecutor, ExecutionResult
 logger = logging.getLogger(__name__)
 
 class PipelineProcessor:
-    """Main pipeline processor for handling CSV data."""
+    """Main pipeline processor for handling CSV data using LLM for event extraction."""
     
+    SUPPORTED_APIS = {
+        "get_events": {
+            "description": "Fetches contract events based on address, event name, and signature."
+        },
+        "tag_as_expense": {
+            "description": "Tags a transaction as an expense."
+        },
+        "get_transaction": {
+            "description": "Fetches transaction details."
+        },
+        "get_receipt": {
+            "description": "Fetches transaction receipt."
+        }
+    }
+
     def __init__(self, max_workers: int = 4):
-        """Initialize processor with number of worker threads."""
+        logger.error("PIPELINE_PROCESSOR_INIT_V_LATEST_R3: PipelineProcessor class is being initialized.") # DIAGNOSTIC LOG
         self.batch_executor = BatchExecutor(max_workers=max_workers)
-        self.supported_apis = SUPPORTED_APIS  # Use the same API definitions as llm_client
+        # self.supported_apis is now a class variable, no need to set it in __init__ unless it's instance-specific
     
-    def _process_single_row(self, row: ParsedRow) -> Optional[Dict[str, Any]]:
-        """Process a single row of data."""
-        if not row.params.get("tx_hash"):
-            logger.warning("No transaction hash provided")
-            return None
-        
+    def _process_single_row(self, parsed_row_from_csv_parser: ParsedRow) -> Optional[Dict[str, Any]]:
+        """
+        Processes a single ParsedRow object (which contains raw_data from CSVParser).
+        The raw_data is sent to the LLM for cleaning, validation, and API call structure generation.
+        """
         try:
-            # Generate API calls for this transaction
-            api_calls = generate_api_calls(
-                tx_hash=row.params["tx_hash"],
-                chain=row.raw_data.get("chain", "ETHEREUM"),
-                debug=True
-            )
+            # parsed_row_from_csv_parser.raw_data contains canonically keyed raw CSV strings
+            logger.info(f"_process_single_row: Processing ParsedRow number {parsed_row_from_csv_parser.row_number}")
+            api_calls = generate_api_calls(parsed_row_from_csv_parser.raw_data, debug=True) # from llm_client
             
             if not api_calls:
-                logger.error(f"Failed to generate API calls for tx_hash: {row.params['tx_hash']}")
+                logger.warning(f"_process_single_row: Failed to generate API calls via LLM for row {parsed_row_from_csv_parser.row_number}. Raw data: {parsed_row_from_csv_parser.raw_data}")
                 return None
             
+            # Expecting one API call structure for event data
+            processed_api_call_struct = api_calls[0]
+
+            # Validate the structure returned by the LLM client
+            if not self.validate_api_call(processed_api_call_struct):
+                logger.warning(f"_process_single_row: LLM-generated API call failed validation for row {parsed_row_from_csv_parser.row_number}. Call: {processed_api_call_struct}")
+                return None
+
             return {
-                "row_number": row.row_number,
-                "api_calls": api_calls,
-                "raw_data": row.raw_data
+                "row_number": parsed_row_from_csv_parser.row_number,
+                "api_calls": [processed_api_call_struct], # Keep it as a list
+                "raw_event_data_from_csv": parsed_row_from_csv_parser.raw_data # For reference
             }
             
         except Exception as e:
-            logger.error(f"Error processing row {row.row_number}: {str(e)}")
+            logger.error(f"_process_single_row: Error processing row {parsed_row_from_csv_parser.row_number}: {str(e)}", exc_info=True)
             return None
     
     def process_file(self, file_path: str) -> List[Dict[str, Any]]:
         """
-        Process a CSV file through the pipeline.
+        Parses a CSV file and processes each row to generate API call structures.
+        """
+        try:
+            parser = CSVParser(file_path)
+            parsed_rows = parser.parse() # List of ParsedRow objects
+            
+            if not parsed_rows:
+                logger.error(f"process_file: No ParsedRow objects created by CSVParser for file: {file_path}")
+                return []
+            
+            logger.info(f"process_file: CSVParser created {len(parsed_rows)} ParsedRow objects. Now processing with _process_single_row.")
+            
+            results = []
+            for pr in parsed_rows:
+                result = self._process_single_row(pr)
+                if result:
+                    results.append(result)
+                # _process_single_row logs its own errors/warnings for failed rows
+            
+            if not results:
+                logger.error("process_file: No rows were successfully processed by _process_single_row.")
+                return []
+            
+            logger.info(f"process_file: Successfully processed {len(results)} out of {len(parsed_rows)} ParsedRows.")
+            return results
+            
+        except Exception as e:
+            logger.error(f"process_file: Error during file processing for {file_path}: {str(e)}", exc_info=True)
+            return []
+
+    def validate_api_call(self, api_call_struct: Dict) -> bool:
+        """Validates a single API call structure (typically generated by the LLM client)."""
+        method = api_call_struct.get('method')
+        
+        # DIAGNOSTIC LOGGING:
+        logger.info(f"DIAGNOSTIC: Inside validate_api_call. Method to check: '{method}'. PipelineProcessor.SUPPORTED_APIS is: {PipelineProcessor.SUPPORTED_APIS}")
+
+        # Ensure method is a string before checks
+        if not isinstance(method, str):
+            logger.error(f"validate_api_call: API 'method' is not a string or is missing. Call: {api_call_struct}")
+            return False
+
+        if method not in self.SUPPORTED_APIS: # Check instance first (though they should be same)
+            if method not in PipelineProcessor.SUPPORTED_APIS: # Then check class variable directly
+                logger.error(f"validate_api_call: Unsupported API method: '{method}'. Call: {api_call_struct}. (Checked against class var: {PipelineProcessor.SUPPORTED_APIS})")
+                return False
+            
+        params = api_call_struct.get('params')
+        if not isinstance(params, dict):
+            logger.error(f"validate_api_call: 'params' field is missing or not a dict for method '{method}'. Call: {api_call_struct}")
+            return False
+        
+        # Specific checks for 'get_events'
+        if method == 'get_events':
+            required_event_params_keys = {
+                'contract_address': "a non-empty string starting with '0x'.",
+                'event_name': "a non-empty string.",
+                'event_signature': "a non-empty string containing '(' and ')'."
+            }
+            errors_found = []
+            for p_key, p_desc in required_event_params_keys.items():
+                val = params.get(p_key)
+                if not val: # Covers None or empty string
+                    errors_found.append(f"parameter '{p_key}' is missing or empty (expected {p_desc}) Got: '{val}'")
+                elif p_key == 'contract_address' and (not isinstance(val, str) or not val.startswith('0x')):
+                    errors_found.append(f"parameter '{p_key}' format is invalid (expected {p_desc}) Got: '{val}'")
+                elif p_key == 'event_signature' and (not isinstance(val, str) or '(' not in val or ')' not in val):
+                     errors_found.append(f"parameter '{p_key}' format is invalid (expected {p_desc}) Got: '{val}'")
+                elif p_key == 'event_name' and (not isinstance(val, str) or not val): # just needs to be non-empty string
+                     pass # Already covered by the initial `if not val:`
+            
+            if errors_found:
+                logger.error(f"validate_api_call: Validation failed for 'get_events' due to: {'; '.join(errors_found)}. Params received: {params}")
+                return False
+        
+        logger.debug(f"validate_api_call: Successfully validated API call for method '{method}'. Params: {params}")
+        return True
+
+    def _infer_function_from_prompt(self, prompt: str) -> tuple[Optional[str], List[str], float]:
+        """
+        Uses LLM to infer the API function and required parameters based on the user's prompt.
         
         Args:
-            file_path: Path to the CSV file
+            prompt: Natural language prompt from the user
             
         Returns:
-            List of processed results
+            Tuple of (inferred_function_name, required_parameters, confidence_score)
         """
-        # Parse and clean CSV data
-        parser = CSVParser(file_path)
-        parsed_rows = parser.parse()
-        
-        if not parsed_rows:
-            logger.error("No valid rows found in CSV file")
-            return []
-        
-        # Process rows in parallel
-        results = self.batch_executor.execute(
-            func=self._process_single_row,
-            data_list=parsed_rows,
-            row_numbers=[row.row_number for row in parsed_rows]
-        )
-        
-        # Extract successful results
-        successful_results = self.batch_executor.get_successful_results(results)
-        
-        # Log summary
-        failed_rows = self.batch_executor.get_failed_rows(results)
-        if failed_rows:
-            logger.warning(f"Failed to process rows: {failed_rows}")
-        
-        logger.info(f"Successfully processed {len(successful_results)} out of {len(parsed_rows)} rows")
-        return successful_results
-
-    async def process_data(self, extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
-        """Process extracted data using LLM to identify required API calls."""
-        if isinstance(extracted_data, dict):
-            extracted_data = [extracted_data]
+        try:
+            import subprocess
+            import json
+            from .api_docs import API_USAGE_GUIDE, INTENT_ANALYSIS_PROMPT
             
-        all_api_calls = []
+            # Prepare the prompt for the LLM
+            full_prompt = API_USAGE_GUIDE + "\n\n" + INTENT_ANALYSIS_PROMPT.format(user_prompt=prompt)
+            
+            # Call the LLM (using Ollama in this case)
+            command = [
+                "ollama", "run", "mistral:instruct",
+                "--format", "json"
+            ]
+            
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            stdout, stderr = process.communicate(input=full_prompt, timeout=75)
+            
+            if process.returncode != 0:
+                logger.error(f"LLM process error. Return code: {process.returncode}. Stderr: {stderr.strip()}")
+                return None, [], 0.0
+                
+            # Parse the LLM's response
+            response = json.loads(stdout.strip())
+            
+            api_method = response.get('api_method')
+            required_params = response.get('required_params', [])
+            confidence = float(response.get('confidence', 0.0))
+            
+            # Log the reasoning
+            logger.info(f"Intent analysis for prompt '{prompt}':")
+            logger.info(f"Selected API: {api_method}")
+            logger.info(f"Reasoning: {response.get('reasoning')}")
+            logger.info(f"Required parameters: {required_params}")
+            logger.info(f"Confidence: {confidence}")
+            
+            if api_method not in self.SUPPORTED_APIS:
+                logger.error(f"LLM suggested unsupported API method: {api_method}")
+                return None, [], 0.0
+                
+            if confidence < 0.7:  # We can adjust this threshold
+                logger.warning(f"Low confidence ({confidence}) in API selection for prompt: {prompt}")
+                
+            return api_method, required_params, confidence
+            
+        except Exception as e:
+            logger.error(f"Error during intent analysis: {str(e)}", exc_info=True)
+            return None, [], 0.0
+
+    def process_natural_language(self, prompt: str, list_of_raw_data_dicts: List[Dict[str, Any]]) -> tuple[Optional[str], List[Dict[str, Any]]]:
+        """
+        Processes a list of raw data dictionaries based on a natural language prompt.
+        Uses LLM for intent analysis and API selection.
+        """
+        logger.info("PNL_V_LATEST_R2: Entered process_natural_language. Prompt: '%s', Input data items: %s", prompt, len(list_of_raw_data_dicts))
         
-        for data in extracted_data:
+        # First determine the function and required parameters from the prompt
+        inferred_function_name, required_params, confidence = self._infer_function_from_prompt(prompt.lower())
+        
+        if not inferred_function_name:
+            logger.error(f"PNL: Could not determine function from prompt: '{prompt}'")
+            return None, []
+            
+        if confidence < 0.7:  # We can adjust this threshold
+            logger.warning(f"PNL: Low confidence ({confidence}) in API selection. Proceeding with caution.")
+
+        final_api_call_params_list = []
+        for i, single_raw_data_item in enumerate(list_of_raw_data_dicts):
+            row_num_info = single_raw_data_item.get('csv_row_number', i + 1)
             try:
-                tx_hash = data.get('tx_hash')
-                chain = data.get('chain', 'ETHEREUM')
+                # Add the user's request and required params to each row's data
+                single_raw_data_item['request'] = prompt
+                single_raw_data_item['required_params'] = required_params
                 
-                if not tx_hash:
-                    logger.warning("No transaction hash provided")
-                    continue
+                # Extract tx_hash from tx_link if needed
+                if 'tx_link' in single_raw_data_item and not single_raw_data_item.get('tx_hash'):
+                    tx_link = single_raw_data_item['tx_link']
+                    tx_hash = tx_link.split('/')[-1]
+                    if tx_hash and len(tx_hash) >= 42:  # Basic validation for ETH tx hash
+                        single_raw_data_item['tx_hash'] = tx_hash
+                        single_raw_data_item['chain'] = 'ETHEREUM'  # Default to ETHEREUM for etherscan.io links
                 
-                # Generate API calls with chain information
-                result = generate_api_calls(tx_hash=tx_hash, chain=chain)
+                logger.info(f"PNL: Processing raw data item {row_num_info} via LLM: {single_raw_data_item}")
                 
-                if not result:
-                    logger.error(f"Failed to generate API calls for tx_hash: {tx_hash}")
-                    continue
-                
-                api_calls = result.get('api_calls', [])
-                
-                # Validate each API call
-                validated_calls = []
-                for call in api_calls:
-                    try:
-                        if not call.get('method'):
-                            logger.error("Missing method in API call: %s", call)
-                            continue
-                            
-                        if not self.validate_api_call(call):
-                            logger.error("Invalid API call parameters: %s", call)
-                            continue
-                            
-                        # Find API category
-                        category = next((cat for cat, methods in self.supported_apis.items() 
-                                       if call['method'] in methods), None)
-                                       
-                        if not category:
-                            logger.error("Unsupported API method: %s", call['method'])
-                            continue
-                            
-                        # Use chain from API call or fall back to data's chain
-                        call_chain = call.get('chain') or chain
-                        
-                        # Update with category and ensure chain is set
-                        call.update({
-                            'category': category,
-                            'chain': call_chain
-                        })
-                        validated_calls.append(call)
-                        
-                    except Exception as e:
-                        logger.error(f"Error validating API call: {str(e)}")
-                        continue
-                
-                all_api_calls.extend(validated_calls)
-                
-            except Exception as e:
-                logger.error("Error processing data: %s", str(e))
-        
-        return all_api_calls
+                # Generate API calls using the LLM
+                generated_api_call_structures = generate_api_calls(single_raw_data_item, debug=True)
 
-    def validate_api_call(self, api_call: Dict) -> bool:
-        """Validate that an API call has all required parameters."""
-        required_params = {
-            'get_transaction': ['tx_hash'],
-            'get_receipt': ['tx_hash'],
-            'get_balance': ['address', 'token_address'],
-            'get_transfers': ['address'],
-            'get_abi': ['contract_address'],
-            'get_events': ['contract_address', 'event_name']
-        }
-        
-        method = api_call.get('method')
-        params = api_call.get('params', {})
-        
-        if method not in required_params:
-            return False
+                if not generated_api_call_structures:
+                    logger.warning(f"PNL: Item {row_num_info}: LLM client did not generate API calls. Raw data: {single_raw_data_item}. Skipping.")
+                    continue
+                
+                llm_processed_api_call_struct = generated_api_call_structures[0]
+
+                # Validate that the API call matches what we inferred from the prompt
+                if llm_processed_api_call_struct.get('method') != inferred_function_name:
+                    logger.warning(f"PNL: Item {row_num_info}: LLM generated '{llm_processed_api_call_struct.get('method')}' but prompt suggests '{inferred_function_name}'. Using prompt's intent.")
+                    llm_processed_api_call_struct['method'] = inferred_function_name
+
+                # Validate required parameters are present
+                params = llm_processed_api_call_struct.get('params', {})
+                missing_params = [p for p in required_params if p not in params or not params[p]]
+                if missing_params:
+                    logger.warning(f"PNL: Item {row_num_info}: Missing required parameters: {missing_params}")
+                    continue
+
+                if not self.validate_api_call(llm_processed_api_call_struct):
+                    logger.warning(f"PNL: Item {row_num_info}: LLM-generated API call failed validation: {llm_processed_api_call_struct}. Skipping.")
+                    continue
+                
+                api_params = llm_processed_api_call_struct.get('params')
+                if api_params:
+                    final_api_call_params_list.append(api_params)
+                    logger.info(f"PNL: Item {row_num_info}: Successfully prepared params for '{inferred_function_name}'.")
+                else:
+                    logger.warning(f"PNL: Item {row_num_info}: LLM-processed call for '{inferred_function_name}' is missing 'params' dict. Struct: {llm_processed_api_call_struct}. Skipping.")
+                                
+            except Exception as e:
+                logger.error(f"PNL: Item {row_num_info}: Error during natural language processing: {str(e)}. Raw data: {single_raw_data_item}", exc_info=True)
+                continue
+                
+        if not final_api_call_params_list:
+            logger.error(f"PNL: No valid API call parameters prepared from {len(list_of_raw_data_dicts)} items for prompt '{prompt}'.")
+            return inferred_function_name, []
             
-        return all(param in params for param in required_params[method])
+        logger.info(f"PNL: Prepared {len(final_api_call_params_list)} sets of API call params for function '{inferred_function_name}'.")
+        return inferred_function_name, final_api_call_params_list
 
 # Helper function for external use
 async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
@@ -182,16 +303,88 @@ async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict
 
 if __name__ == "__main__":
     import asyncio
-    
-    # Example usage
-    test_data = {
-        "tx_hash": "0x123abc...",
-        "chain": "ETHEREUM",
-        "raw_text": "Check the transaction status and get the receipt"
+    import tempfile
+    import csv
+
+    # --- Standard Logging Setup ---
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler() # Ensure logs go to console
+        ]
+    )
+    logger.info("PipelineProcessor test script started.")
+
+    # --- Test 1: process_file (simulates CSV file processing) ---
+    logger.info("--- Starting Test 1: process_file ---")
+    # Example CSV row data
+    csv_row_data_for_file_test = {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "event thingy": "Transfer(address", # Intentionally incomplete signature part
+        "extra_info": "address,uint256)"   # Rest of signature
     }
-    
-    async def test():
-        result = await process_with_llm(test_data)
-        print(json.dumps(result, indent=2))
+    processor_for_file_test = PipelineProcessor()
+    temp_csv_file_path = ""
+
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=csv_row_data_for_file_test.keys())
+            writer.writeheader()
+            writer.writerow(csv_row_data_for_file_test)
+            writer.writerow({"contract_address": "invalid_address", "event thingy": "Test(uint256)", "extra_info": ""}) # An invalid row
+            temp_csv_file_path = f.name
         
-    asyncio.run(test())
+        logger.info(f"Test CSV file created at: {temp_csv_file_path}")
+        file_processing_results = processor_for_file_test.process_file(temp_csv_file_path)
+        
+        if file_processing_results:
+            logger.info("Successfully processed test CSV file via process_file:")
+            print(json.dumps(file_processing_results, indent=2))
+        else:
+            logger.warning("process_file: No results or failed to process test CSV file.")
+    except Exception as e:
+        logger.error(f"Error during process_file test: {e}", exc_info=True)
+    finally:
+        if temp_csv_file_path and os.path.exists(temp_csv_file_path):
+            os.unlink(temp_csv_file_path)
+            logger.info(f"Test CSV file deleted: {temp_csv_file_path}")
+    logger.info("--- Finished Test 1: process_file ---")
+
+    # --- Test 2: process_data (simulates direct data processing via process_with_llm helper) ---
+    logger.info("--- Starting Test 2: process_data (via process_with_llm) ---")
+    # Example raw data for direct processing (simulating already parsed/extracted data)
+    raw_event_data_for_direct_test = [
+        {
+            "contract_address": "0x2222222222222222222222222222222222222222",
+            "event_name": "Approval", # More direct field name
+            "event_params": "(address,address,uint256)" # Complete params
+        },
+        {
+            "contract_address": "0x3333333333333333333333333333333333333333",
+            "some_event_col": "Payment(uint256,string)", # Different column name for event
+            "notes": "A test payment event"
+        },
+        {
+             "address_field": "invalid-address-format", # Invalid data
+             "event_field": "Failure()"
+        }
+    ]
+
+    async def run_process_data_test():
+        try:
+            logger.info(f"Test data for process_data: {json.dumps(raw_event_data_for_direct_test, indent=2)}")
+            # process_with_llm calls processor.process_data()
+            direct_processing_results = await process_with_llm(raw_event_data_for_direct_test)
+            
+            if direct_processing_results:
+                logger.info("Successfully processed data via process_data/process_with_llm:")
+                print(json.dumps(direct_processing_results, indent=2))
+            else:
+                logger.warning("process_data/process_with_llm: No results or failed to process data.")
+        except Exception as e:
+            logger.error(f"Error during process_data test: {e}", exc_info=True)
+
+    asyncio.run(run_process_data_test())
+    logger.info("--- Finished Test 2: process_data (via process_with_llm) ---")
+    logger.info("PipelineProcessor test script finished.")

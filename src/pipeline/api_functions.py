@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +33,20 @@ def tag_as_expense(
     
     # Process the data
     result = {
-        "tx_hash": tx_hash,
-        "chain": chain,
-        "purpose": purpose or "Unspecified",
-        "amount_in_eth": amount_in_eth,
-        "amount_in_usd": amount_in_usd,
-        "timestamp": datetime.utcnow().isoformat(),
-        "status": "tagged_as_expense"
+        "method": "tag_as_expense",
+        "params": {
+            "tx_hash": tx_hash,
+            "chain": chain,
+            "purpose": purpose or "Unspecified",
+            "amount_in_eth": amount_in_eth,
+            "amount_in_usd": amount_in_usd
+        },
+        "timestamp": datetime.utcnow().isoformat()
     }
     
-    # Log the result
-    logger.info(f"Tagged transaction {tx_hash} as expense: {purpose}")
+    # Log the API call
+    logger.info(f"Generated API call for {tx_hash}:")
+    logger.info(json.dumps(result, indent=2))
     
     return result
 
@@ -76,8 +80,9 @@ def get_transaction(
         "timestamp": datetime.utcnow().isoformat()
     }
     
-    # Log the result
-    logger.info(f"Generated get_transaction call for {tx_hash}")
+    # Log the API call
+    logger.info(f"Generated API call for {tx_hash}:")
+    logger.info(json.dumps(result, indent=2))
     
     return result
 
@@ -111,7 +116,8 @@ def get_receipt(
         "timestamp": datetime.utcnow().isoformat()
     }
     
-    # Log the result
-    logger.info(f"Generated get_receipt call for {tx_hash}")
+    # Log the API call
+    logger.info(f"Generated API call for {tx_hash}:")
+    logger.info(json.dumps(result, indent=2))
     
     return result 
