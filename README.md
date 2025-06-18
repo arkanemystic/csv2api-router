@@ -108,15 +108,6 @@ csv2api-router/
 
 ---
 
-## **Key Files to Document in README**
-- `app.py`: Streamlit UI, user interaction
-- `src/pipeline/processor.py`: Main pipeline logic, LLM orchestration, mapping plan application
-- `src/pipeline/llm_client.py`: LLM invocation, API call validation
-- `src/pipeline/csv_cleaner.py` & `csv_parser.py`: Data cleaning and parsing
-- `tests/`: Unit tests
-
----
-
 ## **Caveats & Notes**
 - The LLM must be running and accessible via Ollama.
 - The pipeline expects the CSV to have headers that can be mapped to API parameters.
