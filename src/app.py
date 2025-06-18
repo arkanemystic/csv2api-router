@@ -15,7 +15,8 @@ def process_csv_with_llm(prompt, df, pipeline_processor):
     # Convert each row to a dict (with original column names)
     raw_rows = df.to_dict(orient='records')
     # Pass prompt and raw rows to the pipeline processor (which will call the LLM)
-    return pipeline_processor.process_natural_language(prompt, raw_rows)
+    function_name, api_calls = pipeline_processor.process_natural_language(prompt, raw_rows)
+    return function_name, api_calls
 
 def main():
     st.title("CSV to API Router 🔄")

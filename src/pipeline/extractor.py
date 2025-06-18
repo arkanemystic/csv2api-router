@@ -1,6 +1,6 @@
 import pandas as pd
 import re
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Any, cast
 import json
 import logging
 from pathlib import Path
@@ -19,7 +19,7 @@ class DataExtractor:
         }
         self.logger = logging.getLogger(__name__)
     
-    def extract_from_csv(self, file_path: Union[str, Path]) -> List[Dict]:
+    def extract_from_csv(self, file_path: Union[str, Path]) -> List[Dict[str, Any]]:
         """
         Extract API-relevant data from a CSV file.
         
@@ -35,49 +35,70 @@ class DataExtractor:
             
             for idx, row in df.iterrows():
                 try:
-                    data = {}
+                    data: Dict[str, Any] = {}
+                    # Convert index to int safely
+                    row_idx = int(str(idx))
                     
                     # Extract transaction hash if present
                     tx_link = row.get('tx_link') or row.get('transaction_link')
-                    if tx_link and pd.notna(tx_link):
-                        tx_hash_match = self.tx_hash_pattern.search(str(tx_link))
+                    if isinstance(tx_link, str) and pd.notna(tx_link):
+                        tx_hash_match = self.tx_hash_pattern.search(tx_link)
                         if tx_hash_match:
                             data['tx_hash'] = tx_hash_match.group()
+                            self.logger.info(f"Extracted tx_hash {data['tx_hash']} from row {row_idx + 1}")
                         
                     # Infer blockchain chain from domain
-                    if tx_link and pd.notna(tx_link):
+                    if isinstance(tx_link, str) and pd.notna(tx_link):
                         for chain, pattern in self.chain_patterns.items():
-                            if pattern.search(str(tx_link)):
+                            if pattern.search(tx_link):
                                 data['chain'] = chain.upper()
+                                self.logger.info(f"Inferred chain {data['chain']} from URL for row {row_idx + 1}")
                                 break
                     
-                    # Extract other fields
-                    for col in row.index:
-                        if pd.notna(row[col]):
-                            # Clean up amount fields
-                            if 'amount' in col.lower():
-                                value = str(row[col]).strip()
-                                if value.startswith('$'):
-                                    value = value[1:]  # Remove dollar sign
-                                try:
-                                    data[col] = float(value.replace(',', ''))
-                                except ValueError:
-                                    self.logger.warning(f"Invalid amount value in row {idx + 1}: {value}")
-                            else:
-                                data[col] = row[col]
+                    # Map purpose to expense_category
+                    if 'purpose' in row.index:
+                        purpose_value = row.at['purpose']
+                        if not pd.isna(purpose_value):
+                            data['expense_category'] = str(purpose_value).strip()
+                            self.logger.info(f"Mapped expense category {data['expense_category']} for row {row_idx + 1}")
+                    
+                    # Clean up amount fields
+                    if 'amount in ETH' in row.index:
+                        eth_amount = row.at['amount in ETH']
+                        if not pd.isna(eth_amount):
+                            try:
+                                data['amount_in_eth'] = float(str(eth_amount).replace(',', ''))
+                            except ValueError:
+                                self.logger.warning(f"Invalid ETH amount in row {row_idx + 1}: {eth_amount}")
+                    
+                    if 'amount in USD' in row.index:
+                        usd_amount = row.at['amount in USD']
+                        if not pd.isna(usd_amount):
+                            try:
+                                # Remove $ and commas, then convert to float
+                                usd_str = str(usd_amount).replace('$', '').replace(',', '')
+                                data['amount_in_usd'] = float(usd_str)
+                            except ValueError:
+                                self.logger.warning(f"Invalid USD amount in row {row_idx + 1}: {usd_amount}")
+                    
+                    # Add timestamp if present
+                    if 'Time' in row.index:
+                        time_value = row.at['Time']
+                        if not pd.isna(time_value):
+                            data['timestamp'] = str(time_value)
                     
                     # Fill missing fields with defaults
                     data.setdefault('chain', 'ETHEREUM')
-                    data.setdefault('purpose', 'general')
                     
                     # Only add rows that have either a transaction hash or a valid amount
-                    if 'tx_hash' in data or any('amount' in k.lower() for k in data.keys()):
+                    if 'tx_hash' in data:
                         extracted_data.append(data)
+                        self.logger.info(f"Successfully processed row {row_idx + 1}")
                     else:
-                        self.logger.warning(f"Skipping row {idx + 1}: No valid transaction hash or amount found")
+                        self.logger.warning(f"Skipping row {row_idx + 1}: No valid transaction hash found")
                         
                 except Exception as row_error:
-                    self.logger.error(f"Error processing row {idx + 1}: {str(row_error)}")
+                    self.logger.error(f"Error processing row {row_idx + 1}: {str(row_error)}")
                     continue
             
             return extracted_data

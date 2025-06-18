@@ -31,74 +31,87 @@ SUPPORTED_APIS = {
 }
 
 def clean_and_validate_api_call(row: Dict[str, Any], debug: bool = False) -> Optional[Dict[str, Any]]:
-    row_num_info = row.get('csv_row_number', 'N/A')
-    logger.info(f"LLM_CLIENT_R6: Attempting to extract API call for row {row_num_info} with input: {row}")
-
-    # Extract input transaction hash for validation
-    input_tx_hash = row.get('tx_hash')
-    if not input_tx_hash and 'tx_link' in row:
-        input_tx_hash = row['tx_link'].split('/')[-1]
-
-    # Extract chain information
-    chain = row.get('chain', 'ETHEREUM')  # Default to ETHEREUM if not specified
-    
-    # Check for explicit request in the row data
-    request = row.get('request', '').lower()
-    
-    # Determine API based on request first, then fall back to data structure
-    api_method = None
-    params = {}
-    
-    if 'get receipt' in request or 'fetch receipt' in request:
-        api_method = 'get_receipt'
-        params = {'chain': chain, 'tx_hash': input_tx_hash}
-    elif 'get transaction' in request or 'fetch transaction' in request:
-        api_method = 'get_transaction'
-        params = {'chain': chain, 'tx_hash': input_tx_hash}
-    elif 'tag expense' in request or 'mark expense' in request:
-        api_method = 'tag_as_expense'
-        params = {
-            'chain': chain,
-            'tx_hash': input_tx_hash,
-            'expense_category': row.get('purpose', 'general')
+    """Clean and validate API call parameters from row data."""
+    try:
+        row_num_info = row.get('csv_row_number', 'N/A')
+        logger.info(f"LLM_CLIENT_R6: Attempting to extract API call for row {row_num_info}")
+        
+        # Extract tx_hash
+        tx_hash = row.get('tx_hash')
+        if not tx_hash and 'tx_link' in row:
+            tx_link = row.get('tx_link', '')
+            if tx_link and '/' in tx_link:
+                tx_hash = tx_link.split('/')[-1]
+                if not tx_hash or len(tx_hash) < 42:  # Basic validation for ETH tx hash
+                    logger.error("Invalid tx_hash length")
+                    return None
+            else:
+                logger.error("Invalid tx_link format")
+                return None
+        
+        if not tx_hash:
+            logger.error("No tx_hash found")
+            return None
+            
+        # Extract chain
+        chain = row.get('chain', 'ETHEREUM')
+        
+        # Extract expense category from purpose or other fields
+        expense_category = None
+        for field in ['purpose', 'expense_category', 'category']:
+            if field in row and row[field]:
+                expense_category = str(row[field]).strip()
+                logger.info(f"Found expense category '{expense_category}' from field '{field}'")
+                break
+        
+        if not expense_category:
+            expense_category = 'general'
+            logger.info("No expense category found, using default 'general'")
+        
+        # Build API call in the exact format from the prompt template
+        api_call = {
+            "api_calls": [
+                {
+                    "method": "tag_as_expense",
+                    "params": {
+                        "tx_hash": tx_hash,
+                        "chain": chain,
+                        "expense_category": expense_category
+                    }
+                }
+            ]
         }
-    elif 'list chains' in request:
-        api_method = 'list_chains'
-        params = {}
-    elif all(key in row for key in ['account_id', 'amount']):
-        api_method = 'fill_account_by'
-        params = {
-            'account_id': row['account_id'],
-            'amount': row['amount']
-        }
-    else:
-        # Default behavior based on available data
-        if input_tx_hash:
-            api_method = 'get_receipt'  # Default to get_receipt when no specific request
-            params = {'chain': chain, 'tx_hash': input_tx_hash}
-
-    if not api_method or not params:
-        logger.error(f"LLM_CLIENT_R6: Could not determine API method for row {row_num_info}")
+        
+        # Validate all required parameters are present and non-empty
+        params = api_call["api_calls"][0]["params"]
+        if not all(params.values()):
+            missing = [k for k, v in params.items() if not v]
+            logger.error(f"Missing required parameters: {missing}")
+            return None
+            
+        logger.info(f"Generated API call: {json.dumps(api_call, indent=2)}")
+        return api_call
+        
+    except Exception as e:
+        logger.error(f"Error in clean_and_validate_api_call: {str(e)}")
         return None
 
-    return {
-        "api": api_method,
-        "params": params
-    }
-
 def generate_api_calls(row_data: Dict[str, Any], debug: bool = False) -> List[Dict[str, Any]]:
+    """Generate API calls from row data."""
     try:
-        cleaned_data = clean_and_validate_api_call(row_data, debug)
-        if not cleaned_data:
+        logger.info(f"DIAGNOSTIC: Input row data: {json.dumps(row_data, indent=2)}")
+        
+        # Clean and validate the API call
+        api_call = clean_and_validate_api_call(row_data, debug)
+        if not api_call:
+            logger.error("DIAGNOSTIC: Failed to generate valid API call")
             return []
-        api_call = {
-            "method": cleaned_data["api"],
-            "params": cleaned_data["params"]
-        }
-        logger.info(f"Generated API call for {cleaned_data['api']}")
-        return [api_call]
+            
+        # Return the first API call from the list
+        return api_call["api_calls"]
+        
     except Exception as e:
-        logger.error(f"Error generating API calls: {e}")
+        logger.error(f"DIAGNOSTIC: Error generating API calls: {str(e)}")
         return []
 
 def batch_process_rows(rows: List[Dict[str, Any]], debug: bool = False) -> List[Dict[str, Any]]:

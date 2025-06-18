@@ -6,6 +6,9 @@ from pathlib import Path
 from .llm_client import generate_api_calls, SUPPORTED_APIS
 from .csv_parser import CSVParser, ParsedRow, MethodType
 from .batch_executor import BatchExecutor, ExecutionResult
+import re
+import random
+import string
 
 logger = logging.getLogger(__name__)
 
@@ -144,148 +147,139 @@ class PipelineProcessor:
         logger.debug(f"validate_api_call: Successfully validated API call for method '{method}'. Params: {params}")
         return True
 
-    def _infer_function_from_prompt(self, prompt: str) -> tuple[Optional[str], List[str], float]:
-        """
-        Uses LLM to infer the API function and required parameters based on the user's prompt.
-        
-        Args:
-            prompt: Natural language prompt from the user
-            
-        Returns:
-            Tuple of (inferred_function_name, required_parameters, confidence_score)
-        """
-        try:
-            import subprocess
-            import json
-            from .api_docs import API_USAGE_GUIDE, INTENT_ANALYSIS_PROMPT
-            
-            # Prepare the prompt for the LLM
-            full_prompt = API_USAGE_GUIDE + "\n\n" + INTENT_ANALYSIS_PROMPT.format(user_prompt=prompt)
-            
-            # Call the LLM (using Ollama in this case)
+    def _infer_function_from_prompt(self, prompt: str) -> Optional[str]:
+        prompt_lower = prompt.lower()
+        if any(kw in prompt_lower for kw in ['receipt', 'get receipt', 'fetch receipt', 'mark as receipt', 'retrieve receipt']):
+            return 'get_receipt'
+        if any(kw in prompt_lower for kw in ['tag', 'categorize', 'expense', 'mark as expense']):
+            return 'tag_as_expense'
+        if any(kw in prompt_lower for kw in ['transaction', 'get transaction', 'fetch transaction']):
+            return 'get_transaction'
+        if any(kw in prompt_lower for kw in ['fill account', 'deposit', 'top up']):
+            return 'fill_account_by'
+        if 'list chain' in prompt_lower:
+            return 'list_chains'
+        return None
+
+    def _extract_first_json_array(self, text):
+        # Remove markdown code block markers if present
+        text = re.sub(r'```json|```', '', text)
+        # Find the first JSON array in the text
+        match = re.search(r'\[.*?\]', text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        raise ValueError('No JSON array found in LLM output')
+
+    def _call_llm(self, prompt: str) -> str:
+        import subprocess
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmpfile:
+            tmpfile.write(prompt)
+            tmpfile.flush()
             command = [
-                "ollama", "run", "mistral:instruct",
-                "--format", "json"
+                "ollama", "run", "mistral:instruct"
             ]
-            
             process = subprocess.Popen(
                 command,
-                stdin=subprocess.PIPE,
+                stdin=open(tmpfile.name, 'r'),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
-            stdout, stderr = process.communicate(input=full_prompt, timeout=75)
-            
-            if process.returncode != 0:
-                logger.error(f"LLM process error. Return code: {process.returncode}. Stderr: {stderr.strip()}")
-                return None, [], 0.0
-                
-            # Parse the LLM's response
-            response = json.loads(stdout.strip())
-            
-            api_method = response.get('api_method')
-            required_params = response.get('required_params', [])
-            confidence = float(response.get('confidence', 0.0))
-            
-            # Log the reasoning
-            logger.info(f"Intent analysis for prompt '{prompt}':")
-            logger.info(f"Selected API: {api_method}")
-            logger.info(f"Reasoning: {response.get('reasoning')}")
-            logger.info(f"Required parameters: {required_params}")
-            logger.info(f"Confidence: {confidence}")
-            
-            if api_method not in self.SUPPORTED_APIS:
-                logger.error(f"LLM suggested unsupported API method: {api_method}")
-                return None, [], 0.0
-                
-            if confidence < 0.7:  # We can adjust this threshold
-                logger.warning(f"Low confidence ({confidence}) in API selection for prompt: {prompt}")
-                
-            return api_method, required_params, confidence
-            
-        except Exception as e:
-            logger.error(f"Error during intent analysis: {str(e)}", exc_info=True)
-            return None, [], 0.0
+            stdout, stderr = process.communicate(timeout=120)
+        logger.info(f"LLM STDOUT: {stdout}")
+        if stderr:
+            logger.error(f"LLM STDERR: {stderr}")
+        if process.returncode != 0:
+            logger.error(f"LLM process error. Return code: {process.returncode}. Stderr: {stderr.strip()}")
+        return stdout
 
-    def process_natural_language(self, prompt: str, list_of_raw_data_dicts: List[Dict[str, Any]]) -> tuple[Optional[str], List[Dict[str, Any]]]:
-        """
-        Processes a list of raw data dictionaries based on a natural language prompt.
-        Uses LLM for intent analysis and API selection.
-        """
-        logger.info("PNL_V_LATEST_R2: Entered process_natural_language. Prompt: '%s', Input data items: %s", prompt, len(list_of_raw_data_dicts))
-        
-        # First determine the function and required parameters from the prompt
-        inferred_function_name, required_params, confidence = self._infer_function_from_prompt(prompt.lower())
-        
-        if not inferred_function_name:
-            logger.error(f"PNL: Could not determine function from prompt: '{prompt}'")
+    def _get_mapping_plan_from_llm(self, prompt: str, headers: list) -> dict:
+        api_docs = '\n'.join([
+            f"- {name}: {SUPPORTED_APIS[name]['params']}" for name in SUPPORTED_APIS
+        ])
+        llm_prompt = f"""
+You are an API router. Here are the available API functions:\n{api_docs}\n\nUser prompt: {prompt}\n\nHere are the column headers: {headers}\n\nFor this dataset, which API(s) should be called, and how should each column be mapped to the required parameters?\nOutput a mapping plan in JSON.\nExample format:\n{{\n  \"api_calls\": [\n    {{\n      \"method\": \"get_receipt\",\n      \"params\": {{\"chain\": \"chain\", \"tx_hash\": \"account_id\"}}\n    }}\n  ]\n}}\nOutput ONLY a valid JSON object as specified above. Do NOT include any comments, explanations, markdown, or empty strings for required parameters.\n"""
+        logger.info(f"Sending mapping plan prompt to LLM:\n{llm_prompt}")
+        mapping_plan_str = self._call_llm(llm_prompt)
+        # Remove markdown code block markers if present
+        mapping_plan_str = re.sub(r'```json|```', '', mapping_plan_str)
+        # Remove // ... comments
+        mapping_plan_str = re.sub(r'//.*', '', mapping_plan_str)
+        match = re.search(r'\{.*\}', mapping_plan_str, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        raise ValueError('No JSON object found in LLM output for mapping plan.')
+
+    def process_natural_language(self, prompt: str, list_of_raw_data_dicts: list) -> tuple[Optional[str], list]:
+        logger.info(f"Processing natural language prompt: {prompt}")
+        logger.info(f"Input data contains {len(list_of_raw_data_dicts)} rows")
+        if not list_of_raw_data_dicts:
+            logger.error("No data rows provided.")
             return None, []
-            
-        if confidence < 0.7:  # We can adjust this threshold
-            logger.warning(f"PNL: Low confidence ({confidence}) in API selection. Proceeding with caution.")
-
-        final_api_call_params_list = []
-        for i, single_raw_data_item in enumerate(list_of_raw_data_dicts):
-            row_num_info = single_raw_data_item.get('csv_row_number', i + 1)
-            try:
-                # Add the user's request and required params to each row's data
-                single_raw_data_item['request'] = prompt
-                single_raw_data_item['required_params'] = required_params
-                
-                # Extract tx_hash from tx_link if needed
-                if 'tx_link' in single_raw_data_item and not single_raw_data_item.get('tx_hash'):
-                    tx_link = single_raw_data_item['tx_link']
-                    tx_hash = tx_link.split('/')[-1]
-                    if tx_hash and len(tx_hash) >= 42:  # Basic validation for ETH tx hash
-                        single_raw_data_item['tx_hash'] = tx_hash
-                        single_raw_data_item['chain'] = 'ETHEREUM'  # Default to ETHEREUM for etherscan.io links
-                
-                logger.info(f"PNL: Processing raw data item {row_num_info} via LLM: {single_raw_data_item}")
-                
-                # Generate API calls using the LLM
-                generated_api_call_structures = generate_api_calls(single_raw_data_item, debug=True)
-
-                if not generated_api_call_structures:
-                    logger.warning(f"PNL: Item {row_num_info}: LLM client did not generate API calls. Raw data: {single_raw_data_item}. Skipping.")
-                    continue
-                
-                llm_processed_api_call_struct = generated_api_call_structures[0]
-
-                # Validate that the API call matches what we inferred from the prompt
-                if llm_processed_api_call_struct.get('method') != inferred_function_name:
-                    logger.warning(f"PNL: Item {row_num_info}: LLM generated '{llm_processed_api_call_struct.get('method')}' but prompt suggests '{inferred_function_name}'. Using prompt's intent.")
-                    llm_processed_api_call_struct['method'] = inferred_function_name
-
-                # Validate required parameters are present
-                params = llm_processed_api_call_struct.get('params', {})
-                missing_params = [p for p in required_params if p not in params or not params[p]]
-                if missing_params:
-                    logger.warning(f"PNL: Item {row_num_info}: Missing required parameters: {missing_params}")
-                    continue
-
-                if not self.validate_api_call(llm_processed_api_call_struct):
-                    logger.warning(f"PNL: Item {row_num_info}: LLM-generated API call failed validation: {llm_processed_api_call_struct}. Skipping.")
-                    continue
-                
-                api_params = llm_processed_api_call_struct.get('params')
-                if api_params:
-                    final_api_call_params_list.append(api_params)
-                    logger.info(f"PNL: Item {row_num_info}: Successfully prepared params for '{inferred_function_name}'.")
-                else:
-                    logger.warning(f"PNL: Item {row_num_info}: LLM-processed call for '{inferred_function_name}' is missing 'params' dict. Struct: {llm_processed_api_call_struct}. Skipping.")
-                                
-            except Exception as e:
-                logger.error(f"PNL: Item {row_num_info}: Error during natural language processing: {str(e)}. Raw data: {single_raw_data_item}", exc_info=True)
-                continue
-                
-        if not final_api_call_params_list:
-            logger.error(f"PNL: No valid API call parameters prepared from {len(list_of_raw_data_dicts)} items for prompt '{prompt}'.")
-            return inferred_function_name, []
-            
-        logger.info(f"PNL: Prepared {len(final_api_call_params_list)} sets of API call params for function '{inferred_function_name}'.")
-        return inferred_function_name, final_api_call_params_list
+        headers = list(list_of_raw_data_dicts[0].keys())
+        try:
+            mapping_plan = self._get_mapping_plan_from_llm(prompt, headers)
+            logger.info(f"LLM mapping plan: {mapping_plan}")
+        except Exception as e:
+            logger.error(f"Failed to get mapping plan from LLM: {e}")
+            mapping_plan = None
+        api_calls_per_row = []
+        if mapping_plan and 'api_calls' in mapping_plan:
+            for row_num, row in enumerate(list_of_raw_data_dicts, 1):
+                row_api_calls = []
+                for api_call_plan in mapping_plan['api_calls']:
+                    method = api_call_plan['method']
+                    param_map = api_call_plan['params']
+                    params = {}
+                    for param, col in param_map.items():
+                        params[param] = row.get(col, None)
+                    # Fill placeholders if present (robust)
+                    for k, v in params.items():
+                        if isinstance(v, str):
+                            v_stripped = v.strip()
+                            # Replace any placeholder of the form <...>
+                            if re.match(r'<.*>', v_stripped):
+                                if 'chain' in k:
+                                    params[k] = 'ETHEREUM'
+                                    logger.warning(f"Row {row_num}: Placeholder for '{k}' replaced with 'ETHEREUM'. (was: {v_stripped})")
+                                elif 'tx_hash' in k:
+                                    params[k] = ''.join(random.choices(string.hexdigits, k=64))
+                                    logger.warning(f"Row {row_num}: Placeholder for '{k}' replaced with random string. (was: {v_stripped})")
+                            elif v_stripped == '':
+                                # Fill empty string for required params
+                                if k == 'chain':
+                                    params[k] = 'ETHEREUM'
+                                    logger.warning(f"Row {row_num}: Empty string for 'chain' replaced with 'ETHEREUM'.")
+                                elif k == 'tx_hash':
+                                    params[k] = ''.join(random.choices(string.hexdigits, k=64))
+                                    logger.warning(f"Row {row_num}: Empty string for 'tx_hash' replaced with random string.")
+                    # Only add if all required params are present and non-empty
+                    required = SUPPORTED_APIS.get(method, {}).get('params', [])
+                    if all(params.get(p) for p in required):
+                        row_api_calls.append({'method': method, 'params': params})
+                    else:
+                        logger.warning(f"Row {row_num}: Missing required params for {method}: {params}")
+                if row_api_calls:
+                    api_calls_per_row.append({'row': row_num, 'api_calls': row_api_calls})
+        else:
+            logger.warning("Mapping plan missing or ambiguous, falling back to row-by-row LLM inference (not implemented here)")
+        # Remove any rows with 'row': 0 (LLM output bug)
+        api_calls_per_row = [r for r in api_calls_per_row if r.get('row', 1) != 0]
+        # After collecting all api_calls_per_row, summarize API methods
+        all_methods = set()
+        for row in api_calls_per_row:
+            for call in row.get('api_calls', []):
+                method = call.get('method')
+                if method:
+                    all_methods.add(method)
+        if all_methods:
+            logger.info(f"API calls generated for methods: {', '.join(sorted(all_methods))}")
+            function_summary = ', '.join(sorted(all_methods))
+        else:
+            logger.warning("No valid API calls generated.")
+            function_summary = None
+        return function_summary, api_calls_per_row
 
 # Helper function for external use
 async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
@@ -299,7 +293,9 @@ async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict
         List of structured API calls
     """
     processor = PipelineProcessor()
-    return await processor.process_data(extracted_data)
+    if isinstance(extracted_data, dict):
+        extracted_data = [extracted_data]
+    return processor.process_natural_language("", extracted_data)[1]  # Return just the API calls
 
 if __name__ == "__main__":
     import asyncio

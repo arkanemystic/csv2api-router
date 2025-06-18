@@ -1,8 +1,10 @@
 import csv
 import logging
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from urllib.parse import urlparse, parse_qs
 from enum import Enum
+import re
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -92,25 +94,26 @@ def extract_tx_hash_from_url(url: str) -> Optional[str]:
         logger.warning(f"Error extracting tx_hash from URL: {e}")
         return None
 
-def determine_function_type(row: Dict) -> FunctionType:
+def determine_function_type(row_data: Dict[str, Any]) -> FunctionType:
     """
-    Determine which function to use based on row contents.
-    Uses heuristics to decide without LLM.
+    Determine the function type based on the presence of required fields.
     """
-    # If row has purpose and amount fields, it's likely an expense
-    has_purpose = 'purpose' in row and row['purpose']
-    has_amount = any(k.startswith('amount') for k in row.keys())
-    has_tx_hash = 'tx_hash' in row and row['tx_hash']
+    # Check for tag_as_expense requirements
+    has_tx_hash = bool(row_data.get('tx_hash'))
+    has_purpose = bool(row_data.get('purpose') or row_data.get('expense_category'))
+    has_amount = bool(row_data.get('amount in ETH') or row_data.get('amount in USD'))
     
-    # If we have a valid tx_hash and either purpose or amount, it's an expense
     if has_tx_hash and (has_purpose or has_amount):
+        logger.debug("Row matches tag_as_expense requirements")
         return FunctionType.TAG_AS_EXPENSE
-        
-    # If we have a tx_hash but no purpose/amount, get transaction details
+    
+    # Check for get_transaction requirements
     if has_tx_hash:
+        logger.debug("Row matches get_transaction requirements")
         return FunctionType.GET_TRANSACTION
-        
-    # Default to getting transaction details
+    
+    # Default to get_transaction if no other type matches
+    logger.debug("No specific function type matched, defaulting to get_transaction")
     return FunctionType.GET_TRANSACTION
 
 def clean_and_classify_csv(file_path: str) -> Tuple[str, List[Dict]]:
@@ -158,7 +161,7 @@ def clean_and_classify_csv(file_path: str) -> Tuple[str, List[Dict]]:
                 
                 # Extract tx_hash and chain from tx_link if present
                 tx_hash = None
-                chain = "ETHEREUM"  # Default chain
+                chain = "ETHEREUM"
                 
                 if 'tx_link' in cleaned and cleaned['tx_link']:
                     logger.debug(f"Row {row_num}: Found tx_link: {cleaned['tx_link']}")
@@ -195,6 +198,9 @@ def clean_and_classify_csv(file_path: str) -> Tuple[str, List[Dict]]:
                 if 'purpose' not in cleaned or not cleaned['purpose']:
                     cleaned['purpose'] = 'General'
                     logger.debug(f"Row {row_num}: Set default purpose to 'General'")
+                
+                # Map purpose to expense_category for tag_as_expense
+                cleaned['expense_category'] = cleaned.get('purpose', 'General')
                 
                 # Determine function type for this row
                 function_type = determine_function_type(cleaned)

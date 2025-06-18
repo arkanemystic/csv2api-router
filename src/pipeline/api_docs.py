@@ -82,20 +82,18 @@ Use when:
     - "What chains can I use?"
 '''
 
-INTENT_ANALYSIS_PROMPT = '''
-Given the following user prompt:
-"{user_prompt}"
+INTENT_ANALYSIS_PROMPT = '''Given the following user prompt:
+{user_prompt}
 
 And considering the API usage guidelines above, determine:
 1. Which API method best matches the user's intent
 2. Why this API is the best choice
 3. What parameters will be needed from the CSV data
 
-Respond in the following JSON format only:
-{
+Respond in the following JSON format only (do not include any comments or explanations outside the JSON):
+{{
     "api_method": "name_of_api_method",
     "reasoning": "brief explanation of why this API was chosen",
     "required_params": ["list", "of", "required", "parameters"],
-    "confidence": 0.XX  // confidence score between 0 and 1
-}
-''' 
+    "confidence": 0.XX
+}}''' 
