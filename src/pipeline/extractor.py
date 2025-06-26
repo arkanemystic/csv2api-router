@@ -30,7 +30,11 @@ class DataExtractor:
             List of dictionaries containing extracted API data
         """
         try:
-            df = pd.read_csv(file_path)
+            try:
+                df = pd.read_csv(file_path, on_bad_lines='skip', engine='python')
+            except Exception as e:
+                self.logger.error(f"Pandas read_csv failed even with engine='python' and on_bad_lines='skip': {e}")
+                raise
             extracted_data = []
             
             for idx, row in df.iterrows():

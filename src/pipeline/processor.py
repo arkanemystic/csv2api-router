@@ -9,6 +9,7 @@ from .batch_executor import BatchExecutor, ExecutionResult
 import re
 import random
 import string
+from .extractor import extract_api_calls
 
 logger = logging.getLogger(__name__)
 
@@ -41,28 +42,20 @@ class PipelineProcessor:
         The raw_data is sent to the LLM for cleaning, validation, and API call structure generation.
         """
         try:
-            # parsed_row_from_csv_parser.raw_data contains canonically keyed raw CSV strings
             logger.info(f"_process_single_row: Processing ParsedRow number {parsed_row_from_csv_parser.row_number}")
             api_calls = generate_api_calls(parsed_row_from_csv_parser.raw_data, debug=True) # from llm_client
-            
-            if not api_calls:
+            if not api_calls or not isinstance(api_calls, list) or len(api_calls) == 0:
                 logger.warning(f"_process_single_row: Failed to generate API calls via LLM for row {parsed_row_from_csv_parser.row_number}. Raw data: {parsed_row_from_csv_parser.raw_data}")
                 return None
-            
-            # Expecting one API call structure for event data
             processed_api_call_struct = api_calls[0]
-
-            # Validate the structure returned by the LLM client
             if not self.validate_api_call(processed_api_call_struct):
                 logger.warning(f"_process_single_row: LLM-generated API call failed validation for row {parsed_row_from_csv_parser.row_number}. Call: {processed_api_call_struct}")
                 return None
-
             return {
                 "row_number": parsed_row_from_csv_parser.row_number,
-                "api_calls": [processed_api_call_struct], # Keep it as a list
-                "raw_event_data_from_csv": parsed_row_from_csv_parser.raw_data # For reference
+                "api_calls": [processed_api_call_struct],
+                "raw_event_data_from_csv": parsed_row_from_csv_parser.raw_data
             }
-            
         except Exception as e:
             logger.error(f"_process_single_row: Error processing row {parsed_row_from_csv_parser.row_number}: {str(e)}", exc_info=True)
             return None
@@ -72,29 +65,28 @@ class PipelineProcessor:
         Parses a CSV file and processes each row to generate API call structures.
         """
         try:
-            parser = CSVParser(file_path)
-            parsed_rows = parser.parse() # List of ParsedRow objects
-            
-            if not parsed_rows:
+            # Step 1: Clean and normalize with extractor
+            cleaned_rows = extract_api_calls(file_path)
+            if not cleaned_rows:
+                logger.error(f"process_file: No valid rows after extraction for file: {file_path}")
+                return []
+            # Step 2: Parse cleaned data with CSVParser
+            parser = CSVParser(file_path='')  # file_path not needed for dict input
+            parsed_rows = parser.parse_from_dicts(cleaned_rows)
+            if not parsed_rows or not isinstance(parsed_rows, list):
                 logger.error(f"process_file: No ParsedRow objects created by CSVParser for file: {file_path}")
                 return []
-            
             logger.info(f"process_file: CSVParser created {len(parsed_rows)} ParsedRow objects. Now processing with _process_single_row.")
-            
             results = []
             for pr in parsed_rows:
                 result = self._process_single_row(pr)
                 if result:
                     results.append(result)
-                # _process_single_row logs its own errors/warnings for failed rows
-            
             if not results:
                 logger.error("process_file: No rows were successfully processed by _process_single_row.")
                 return []
-            
             logger.info(f"process_file: Successfully processed {len(results)} out of {len(parsed_rows)} ParsedRows.")
             return results
-            
         except Exception as e:
             logger.error(f"process_file: Error during file processing for {file_path}: {str(e)}", exc_info=True)
             return []
@@ -177,7 +169,7 @@ class PipelineProcessor:
             tmpfile.write(prompt)
             tmpfile.flush()
             command = [
-                "ollama", "run", "mistral:instruct"
+                "ollama", "run", "custom-mistral:instruct"
             ]
             process = subprocess.Popen(
                 command,
@@ -199,7 +191,36 @@ class PipelineProcessor:
             f"- {name}: {SUPPORTED_APIS[name]['params']}" for name in SUPPORTED_APIS
         ])
         llm_prompt = f"""
-You are an API router. Here are the available API functions:\n{api_docs}\n\nUser prompt: {prompt}\n\nHere are the column headers: {headers}\n\nFor this dataset, which API(s) should be called, and how should each column be mapped to the required parameters?\nOutput a mapping plan in JSON.\nExample format:\n{{\n  \"api_calls\": [\n    {{\n      \"method\": \"get_receipt\",\n      \"params\": {{\"chain\": \"chain\", \"tx_hash\": \"account_id\"}}\n    }}\n  ]\n}}\nOutput ONLY a valid JSON object as specified above. Do NOT include any comments, explanations, markdown, or empty strings for required parameters.\n"""
+You are an API router. Here are the available API functions:
+{api_docs}
+
+User prompt: {prompt}
+Available columns: {headers}
+
+CRITICAL REQUIREMENTS:
+1. ONLY generate API calls that DIRECTLY fulfill the user's prompt.
+2. DO NOT add any extra API calls beyond what was explicitly requested.
+3. If the user asks to "fill accounts", ONLY use the fill_account_by API.
+4. If the user asks to "get transactions", ONLY use the get_transaction API.
+5. If the user asks to "tag expenses", ONLY use the tag_as_expense API.
+6. If the user asks to "get receipts", ONLY use the get_receipt API.
+7. If the user asks to "list chains", ONLY use the list_chains API.
+8. Each API call must have ALL required parameters mapped to actual columns.
+9. NEVER combine multiple API calls unless explicitly requested.
+10. When in doubt, use ONLY the most relevant API that matches the user's intent.
+
+Output a mapping plan in JSON that ONLY includes the API calls needed for the user's prompt.
+Example format:
+{{
+  "api_calls": [
+    {{
+      "method": "fill_account_by",
+      "params": {{"account_id": "tx_hash", "amount": "expense_category"}}
+    }}
+  ]
+}}
+
+Output ONLY a valid JSON object as specified above. Do NOT include any comments, explanations, markdown, or empty strings for required parameters."""
         logger.info(f"Sending mapping plan prompt to LLM:\n{llm_prompt}")
         mapping_plan_str = self._call_llm(llm_prompt)
         # Remove markdown code block markers if present
@@ -217,9 +238,53 @@ You are an API router. Here are the available API functions:\n{api_docs}\n\nUser
         if not list_of_raw_data_dicts:
             logger.error("No data rows provided.")
             return None, []
+
+        # Determine intended function from prompt
+        intended_function = self._infer_function_from_prompt(prompt)
+        if intended_function:
+            logger.info(f"Inferred intended function from prompt: {intended_function}")
+        else:
+            logger.warning("Could not infer intended function from prompt, will not filter API calls")
+
+        # Define robust column mappings for common synonyms
+        COLUMN_MAPPINGS = {
+            'tx_hash': ['tx_hash', 'transaction_hash', 'hash', 'txn_hash', 'txhash', 'transaction id', 'txid'],
+            'chain': ['chain', 'blockchain', 'network', 'platform'],
+            'expense_category': ['expense_category', 'category', 'purpose', 'type', 'description', 'expense type']
+        }
+
+        # Function to find the actual column name based on canonical name
+        def find_column(canonical_name: str, available_columns: list) -> Optional[str]:
+            synonyms = COLUMN_MAPPINGS.get(canonical_name, [canonical_name])
+            for col in available_columns:
+                if col.lower().strip() in [s.lower() for s in synonyms]:
+                    return col
+            return None
+
+        # Normalize the input data with canonical column names
         headers = list(list_of_raw_data_dicts[0].keys())
+        normalized_data = []
+        
+        for row in list_of_raw_data_dicts:
+            normalized_row = {}
+            # Map known columns to their canonical names
+            for canonical, _ in COLUMN_MAPPINGS.items():
+                actual_col = find_column(canonical, row.keys())
+                if actual_col:
+                    normalized_row[canonical] = row[actual_col]
+            # Keep any unmapped columns as is
+            for k, v in row.items():
+                if k not in normalized_row.values():
+                    normalized_row[k] = v
+            normalized_data.append(normalized_row)
+
+        list_of_raw_data_dicts = normalized_data
+        headers = list(normalized_data[0].keys())
+        print(f"Normalized columns for LLM mapping: {headers}")
+
         try:
             mapping_plan = self._get_mapping_plan_from_llm(prompt, headers)
+            print(f"LLM mapping plan: {mapping_plan}")
             logger.info(f"LLM mapping plan: {mapping_plan}")
         except Exception as e:
             logger.error(f"Failed to get mapping plan from LLM: {e}")
@@ -230,6 +295,12 @@ You are an API router. Here are the available API functions:\n{api_docs}\n\nUser
                 row_api_calls = []
                 for api_call_plan in mapping_plan['api_calls']:
                     method = api_call_plan['method']
+                    
+                    # Filter out API calls that don't match the intended function
+                    if intended_function and method != intended_function:
+                        logger.info(f"Row {row_num}: Filtering out {method} API call as it doesn't match intended function {intended_function}")
+                        continue
+                        
                     param_map = api_call_plan['params']
                     params = {}
                     for param, col in param_map.items():
@@ -238,7 +309,6 @@ You are an API router. Here are the available API functions:\n{api_docs}\n\nUser
                     for k, v in params.items():
                         if isinstance(v, str):
                             v_stripped = v.strip()
-                            # Replace any placeholder of the form <...>
                             if re.match(r'<.*>', v_stripped):
                                 if 'chain' in k:
                                     params[k] = 'ETHEREUM'
@@ -246,27 +316,31 @@ You are an API router. Here are the available API functions:\n{api_docs}\n\nUser
                                 elif 'tx_hash' in k:
                                     params[k] = ''.join(random.choices(string.hexdigits, k=64))
                                     logger.warning(f"Row {row_num}: Placeholder for '{k}' replaced with random string. (was: {v_stripped})")
-                            elif v_stripped == '':
-                                # Fill empty string for required params
+                            elif v_stripped == '' or v_stripped.upper() in ['POLYGON', 'ETHEREUM', '[CHAIN]', '[CHAI}']:
                                 if k == 'chain':
                                     params[k] = 'ETHEREUM'
-                                    logger.warning(f"Row {row_num}: Empty string for 'chain' replaced with 'ETHEREUM'.")
+                                    logger.warning(f"Row {row_num}: Empty or invalid string for 'chain' replaced with 'ETHEREUM'.")
                                 elif k == 'tx_hash':
                                     params[k] = ''.join(random.choices(string.hexdigits, k=64))
-                                    logger.warning(f"Row {row_num}: Empty string for 'tx_hash' replaced with random string.")
+                                    logger.warning(f"Row {row_num}: Empty or invalid string for 'tx_hash' replaced with random string.")
                     # Only add if all required params are present and non-empty
                     required = SUPPORTED_APIS.get(method, {}).get('params', [])
-                    if all(params.get(p) for p in required):
+                    missing = []
+                    for p in required:
+                        v = params.get(p)
+                        if v is None:
+                            missing.append(p)
+                        elif isinstance(v, str) and v.strip() == '':
+                            missing.append(p)
+                    if not missing:
                         row_api_calls.append({'method': method, 'params': params})
                     else:
-                        logger.warning(f"Row {row_num}: Missing required params for {method}: {params}")
+                        logger.warning(f"Row {row_num}: Missing required params for {method}: {params}. Missing: {missing}")
                 if row_api_calls:
                     api_calls_per_row.append({'row': row_num, 'api_calls': row_api_calls})
         else:
             logger.warning("Mapping plan missing or ambiguous, falling back to row-by-row LLM inference (not implemented here)")
-        # Remove any rows with 'row': 0 (LLM output bug)
         api_calls_per_row = [r for r in api_calls_per_row if r.get('row', 1) != 0]
-        # After collecting all api_calls_per_row, summarize API methods
         all_methods = set()
         for row in api_calls_per_row:
             for call in row.get('api_calls', []):
@@ -282,12 +356,13 @@ You are an API router. Here are the available API functions:\n{api_docs}\n\nUser
         return function_summary, api_calls_per_row
 
 # Helper function for external use
-async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict]:
+async def process_with_llm(extracted_data: Union[Dict, List[Dict]], prompt: str = "tag these transactions as expenses") -> List[Dict]:
     """
     Process extracted data using LLM to identify and structure API calls.
     
     Args:
         extracted_data: Dictionary or list of dictionaries containing extracted data
+        prompt: Natural language prompt describing what to do with the data (default: tag as expenses)
         
     Returns:
         List of structured API calls
@@ -295,7 +370,7 @@ async def process_with_llm(extracted_data: Union[Dict, List[Dict]]) -> List[Dict
     processor = PipelineProcessor()
     if isinstance(extracted_data, dict):
         extracted_data = [extracted_data]
-    return processor.process_natural_language("", extracted_data)[1]  # Return just the API calls
+    return processor.process_natural_language(prompt, extracted_data)[1]  # Return just the API calls
 
 if __name__ == "__main__":
     import asyncio
@@ -371,16 +446,17 @@ if __name__ == "__main__":
         try:
             logger.info(f"Test data for process_data: {json.dumps(raw_event_data_for_direct_test, indent=2)}")
             # process_with_llm calls processor.process_data()
-            direct_processing_results = await process_with_llm(raw_event_data_for_direct_test)
-            
+            test_prompt = "tag these transactions as expenses"
+            logger.info(f"Testing with prompt: {test_prompt}")
+            direct_processing_results = await process_with_llm(raw_event_data_for_direct_test, test_prompt)
             if direct_processing_results:
-                logger.info("Successfully processed data via process_data/process_with_llm:")
+                logger.info("Successfully processed test data via process_with_llm:")
                 print(json.dumps(direct_processing_results, indent=2))
             else:
-                logger.warning("process_data/process_with_llm: No results or failed to process data.")
+                logger.warning("process_with_llm: No results or failed to process test data.")
         except Exception as e:
             logger.error(f"Error during process_data test: {e}", exc_info=True)
+        logger.info("--- Finished Test 2: process_data ---")
 
     asyncio.run(run_process_data_test())
-    logger.info("--- Finished Test 2: process_data (via process_with_llm) ---")
     logger.info("PipelineProcessor test script finished.")

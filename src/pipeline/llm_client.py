@@ -49,12 +49,15 @@ def clean_and_validate_api_call(row: Dict[str, Any], debug: bool = False) -> Opt
                 logger.error("Invalid tx_link format")
                 return None
         
-        if not tx_hash:
-            logger.error("No tx_hash found")
+        if not tx_hash or not isinstance(tx_hash, str) or tx_hash.strip() == '' or tx_hash.strip().upper() in ['POLYGON', 'ETHEREUM', '[CHAIN]', '[CHAI}']:
+            logger.error(f"No valid tx_hash found: {tx_hash}")
             return None
-            
+        
         # Extract chain
         chain = row.get('chain', 'ETHEREUM')
+        if not chain or not isinstance(chain, str) or chain.strip() == '' or chain.strip().upper() in ['[CHAIN]', '[CHAI}']:
+            logger.warning(f"Invalid or placeholder chain value: {chain}, defaulting to 'ETHEREUM'")
+            chain = 'ETHEREUM'
         
         # Extract expense category from purpose or other fields
         expense_category = None
@@ -84,11 +87,11 @@ def clean_and_validate_api_call(row: Dict[str, Any], debug: bool = False) -> Opt
         
         # Validate all required parameters are present and non-empty
         params = api_call["api_calls"][0]["params"]
-        if not all(params.values()):
-            missing = [k for k, v in params.items() if not v]
+        missing = [k for k, v in params.items() if not v or (isinstance(v, str) and v.strip() == '')]
+        if missing:
             logger.error(f"Missing required parameters: {missing}")
             return None
-            
+        
         logger.info(f"Generated API call: {json.dumps(api_call, indent=2)}")
         return api_call
         
@@ -125,6 +128,65 @@ def batch_process_rows(rows: List[Dict[str, Any]], debug: bool = False) -> List[
             logger.error(f"Error processing row: {e}")
             continue
     return results
+
+def extract_csv_from_text_with_llm(raw_text: str, debug: bool = False) -> str:
+    """
+    Use the LLM to extract a CSV table from pasted or raw text.
+    Returns the CSV as a string (including header row).
+    """
+    prompt = f"""
+Given the following data, extract a valid CSV table with EXACTLY these three columns in this order:
+1. chain (e.g., ETHEREUM, POLYGON)
+2. tx_hash (the transaction hash)
+3. expense_category (the purpose or category of the expense)
+
+IMPORTANT CSV FORMATTING RULES:
+1. Output ONLY these three columns, no extra columns
+2. Each row MUST have exactly three values
+3. Use comma (,) as the delimiter
+4. Do not include any blank lines
+5. First line must be the header: chain,tx_hash,expense_category
+6. Every line after must have exactly two commas (three fields)
+7. Do not include any quotes unless the value contains a comma
+
+Example of correct format:
+chain,tx_hash,expense_category
+ETHEREUM,0x123...,office supplies
+POLYGON,0x456...,software license
+
+Input Data:
+{raw_text}
+
+Output the CSV data only, no explanations or markdown."""
+
+    if debug:
+        logger.info(f"LLM CSV Extraction Prompt:\\n{prompt}")
+    # Use the same LLM call logic as _call_llm or similar
+    import subprocess
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmpfile:
+        tmpfile.write(prompt)
+        tmpfile.flush()
+        command = [
+            "ollama", "run", "custom-mistral:instruct"
+        ]
+        process = subprocess.Popen(
+            command,
+            stdin=open(tmpfile.name, 'r'),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        stdout, stderr = process.communicate(timeout=120)
+    if debug:
+        logger.info(f"LLM STDOUT (CSV Extraction): {stdout}")
+    if stderr:
+        logger.error(f"LLM STDERR (CSV Extraction): {stderr}")
+    if process.returncode != 0:
+        logger.error(f"LLM process error (CSV Extraction). Return code: {process.returncode}. Stderr: {stderr.strip()}")
+    # Remove markdown code block markers if present
+    csv_str = re.sub(r'```csv|```', '', stdout)
+    return csv_str.strip()
 
 if __name__ == "__main__":
     # Add test cases for each API

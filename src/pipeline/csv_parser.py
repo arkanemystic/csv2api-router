@@ -134,3 +134,28 @@ class CSVParser:
         except Exception as e:
             logger.error(f"Error parsing CSV file {self.file_path}: {e}", exc_info=True)
             return [] 
+
+    def parse_from_dicts(self, list_of_dicts: List[Dict[str, Any]]) -> List[ParsedRow]:
+        """Parse already-cleaned data (list of dicts) into ParsedRow objects."""
+        self.rows = []
+        if not list_of_dicts:
+            return []
+        headers: List[str] = list(list_of_dicts[0].keys())
+        self._map_columns(headers)
+        for row_num, row_dict in enumerate(list_of_dicts, 1):
+            raw_data_for_llm = self._get_mapped_raw_data(row_dict, row_num)
+            if all(v is None for k, v in raw_data_for_llm.items() if k != 'csv_row_number'):
+                continue
+            parsed_row_params = {
+                "contract_address_hint": raw_data_for_llm.get("contract_address"),
+                "event_signature_raw_hint": raw_data_for_llm.get("event_name_raw"),
+                "event_params_raw_hint": raw_data_for_llm.get("event_params_raw")
+            }
+            parsed_row = ParsedRow(
+                method=MethodType.GET_EVENTS,
+                params=parsed_row_params,
+                raw_data=raw_data_for_llm,
+                row_number=row_num
+            )
+            self.rows.append(parsed_row)
+        return self.rows 

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class CSVToAPIRouter:
     def __init__(self, csv_path: str):
         self.csv_path = Path(csv_path)
-        self.df = pd.read_csv(csv_path)
+        self.df = pd.read_csv(csv_path, engine='python', on_bad_lines='skip')
         
         # Validate CSV before processing
         self._validate_csv()

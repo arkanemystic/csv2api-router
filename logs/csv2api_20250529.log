@@ -2547,3 +2547,53 @@ Error: Error executing API call get_transaction: Invalid variable type: value sh
 2025-05-29 17:52:14,792 - csv2api - INFO - DEBUG: Generated API calls: []
 2025-05-29 17:52:14,796 - csv2api - INFO - {"timestamp": "2025-05-29T21:52:14.795461", "event_type": "processing", "status": "success", "details": {"input": {"extracted_count": 10}, "output": {"api_calls_count": 0}}}
 2025-05-29 17:52:14,796 - csv2api - INFO - No API calls were generated from the input data
+2025-06-24 20:12:47,773 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:27:06,662 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:31:53,235 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:41:43,215 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:44:37,141 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:49:27,015 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:50:41,076 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:52:55,397 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:56:06,897 - __main__ - ERROR - Error processing pasted data: Error tokenizing data. C error: Expected 3 fields in line 4, saw 4
+Traceback (most recent call last):
+  File "/Users/devrashie/Documents/csProjects/csv2api-router/src/app.py", line 94, in main
+    df = pd.read_csv(io.StringIO(llm_csv))
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/readers.py", line 626, in _read
+    return parser.read(nrows)
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/readers.py", line 1923, in read
+    ) = self._engine.read(  # type: ignore[attr-defined]
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 234, in read
+    chunks = self._reader.read_low_memory(nrows)
+  File "parsers.pyx", line 838, in pandas._libs.parsers.TextReader.read_low_memory
+  File "parsers.pyx", line 905, in pandas._libs.parsers.TextReader._read_rows
+  File "parsers.pyx", line 874, in pandas._libs.parsers.TextReader._tokenize_rows
+  File "parsers.pyx", line 891, in pandas._libs.parsers.TextReader._check_tokenize_status
+  File "parsers.pyx", line 2061, in pandas._libs.parsers.raise_parser_error
+pandas.errors.ParserError: Error tokenizing data. C error: Expected 3 fields in line 4, saw 4
+
+2025-06-25 16:56:16,762 - __main__ - ERROR - Error processing pasted data: Error tokenizing data. C error: Expected 3 fields in line 4, saw 4
+Traceback (most recent call last):
+  File "/Users/devrashie/Documents/csProjects/csv2api-router/src/app.py", line 94, in main
+    df = pd.read_csv(io.StringIO(llm_csv))
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/readers.py", line 626, in _read
+    return parser.read(nrows)
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/readers.py", line 1923, in read
+    ) = self._engine.read(  # type: ignore[attr-defined]
+  File "/Users/devrashie/Library/Python/3.9/lib/python/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 234, in read
+    chunks = self._reader.read_low_memory(nrows)
+  File "parsers.pyx", line 838, in pandas._libs.parsers.TextReader.read_low_memory
+  File "parsers.pyx", line 905, in pandas._libs.parsers.TextReader._read_rows
+  File "parsers.pyx", line 874, in pandas._libs.parsers.TextReader._tokenize_rows
+  File "parsers.pyx", line 891, in pandas._libs.parsers.TextReader._check_tokenize_status
+  File "parsers.pyx", line 2061, in pandas._libs.parsers.raise_parser_error
+pandas.errors.ParserError: Error tokenizing data. C error: Expected 3 fields in line 4, saw 4
+
+2025-06-25 16:57:54,999 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-25 16:59:08,132 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-26 19:29:03,469 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.
+2025-06-26 19:37:17,478 - __main__ - INFO - App.py: Initializing PipelineProcessor in session state.

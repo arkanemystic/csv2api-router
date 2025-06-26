@@ -6,8 +6,19 @@ from pipeline.csv_parser import CSVParser
 import tempfile
 import os
 import logging
+import io
+from pipeline.llm_client import extract_csv_from_text_with_llm
 
+# Configure logger to write to the main log file
+log_path = 'logs/csv2api_20250529.log'
+os.makedirs(os.path.dirname(log_path), exist_ok=True)
+file_handler = logging.FileHandler(log_path)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not any(isinstance(h, logging.FileHandler) and h.baseFilename == file_handler.baseFilename for h in logger.handlers):
+    logger.addHandler(file_handler)
 
 st.set_page_config(page_title="CSV to API Router", page_icon="🔄", layout="wide")
 
@@ -40,14 +51,16 @@ def main():
         )
         if uploaded_file and prompt:
             try:
-                df = pd.read_csv(uploaded_file)
+                df = pd.read_csv(uploaded_file, engine='python', on_bad_lines='skip')
                 st.markdown("#### CSV Preview (first 5 rows)")
                 st.dataframe(df.head(), use_container_width=True)
                 
                 if st.button("Process CSV with LLM"):
                     with st.spinner("Processing with LLM..."):
                         try:
+                            print('process_csv_with_llm: DataFrame columns:', list(df.columns))
                             function_name, formatted_rows = process_csv_with_llm(prompt, df, st.session_state.processor)
+                            print(f'process_csv_with_llm: function_name={function_name}, num_api_calls={len(formatted_rows)}')
                             st.session_state.processed_data = {
                                 'function': function_name,
                                 'api_calls': formatted_rows
@@ -65,22 +78,74 @@ def main():
                 logger.error(f"App.py: Error loading or previewing CSV: {str(e_outer)}", exc_info=True)
                 st.error(f"Error loading/previewing file: {str(e_outer)}")
 
+        st.markdown("### Or paste your data below (CSV, TSV, or table from Excel/Sheets):")
+        pasted_data = st.text_area("Paste data here", height=200)
+
+        if st.button("Process Pasted Data with LLM Extraction"):
+            if pasted_data.strip():
+                with st.spinner("Extracting CSV from pasted data using LLM..."):
+                    try:
+                        llm_csv = extract_csv_from_text_with_llm(pasted_data, debug=True)
+                        print("Raw LLM CSV output:")
+                        print(llm_csv)
+                        print("Attempting to parse LLM CSV output...")
+                        
+                        # Parse CSV and process only if successful
+                        df = pd.read_csv(
+                            io.StringIO(llm_csv),
+                            engine='python',
+                            on_bad_lines='skip',
+                            names=['chain', 'tx_hash', 'expense_category'],
+                            header=0  # First line is header
+                        )
+                        
+                        # Ensure we have all required columns
+                        required_columns = ['chain', 'tx_hash', 'expense_category']
+                        missing_columns = [col for col in required_columns if col not in df.columns]
+                        if missing_columns:
+                            raise ValueError(f"Missing required columns: {missing_columns}")
+                            
+                        print('Final DataFrame columns (after normalization):', list(df.columns))
+                        
+                        # Show preview
+                        st.dataframe(df.head())
+                        
+                        # Only process if we have a prompt
+                        if prompt:
+                            function_name, api_calls = process_csv_with_llm(prompt, df, st.session_state.processor)
+                            st.session_state.processed_data = {
+                                'function': function_name,
+                                'api_calls': api_calls
+                            }
+                            if api_calls:
+                                st.success(f"Successfully processed {len(api_calls)} items for function '{function_name}'!")
+                            else:
+                                st.warning(f"Processing complete, but no API calls were successfully generated for function '{function_name}'. Check logs for details.")
+                        else:
+                            st.warning("Please enter a prompt to process the pasted data.")
+                    except Exception as e:
+                        st.error(f"Failed to extract or parse CSV from LLM output: {e}")
+                        logger.error(f"Error processing pasted data: {e}", exc_info=True)
+
     with col2:
         st.markdown("### 2. View API Call Parameters")
         if st.session_state.processed_data and st.session_state.processed_data['api_calls']:
             st.markdown(f"#### API Function: `{st.session_state.processed_data['function']}`")
             st.markdown("##### Parameters for API Calls:")
             
-            # Create a list of dictionaries for DataFrame conversion
             display_data = []
-            for i, params_dict in enumerate(st.session_state.processed_data['api_calls']):
-                if isinstance(params_dict, dict):
-                    item = {'#': i + 1}
-                    item.update(params_dict)
-                    display_data.append(item)
-                else:
-                    st.warning(f"Malformed API call parameters at index {i}: {params_dict}")
-            
+            for i, row in enumerate(st.session_state.processed_data['api_calls']):
+                # row is expected to be {'row': row_num, 'api_calls': [ ... ]}
+                api_calls = row.get('api_calls', [])
+                for api_call in api_calls:
+                    flat = {'#': i + 1, 'row': row.get('row')}
+                    flat['method'] = api_call.get('method')
+                    params = api_call.get('params', {})
+                    # Add each parameter as its own column
+                    for k, v in params.items():
+                        flat[k] = v
+                    display_data.append(flat)
+
             if display_data:
                 st.dataframe(pd.DataFrame(display_data), use_container_width=True)
 
