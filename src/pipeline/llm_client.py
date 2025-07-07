@@ -198,6 +198,8 @@ if __name__ == "__main__":
         {"request": "list all chains"}
     ]
     print("--- Testing LLM Client (R6) ---")
+    success_count = 0
+    fail_count = 0
     for i, row in enumerate(test_rows, 1):
         print(f"Test Case {i}:")
         result = clean_and_validate_api_call(row, debug=True)
@@ -205,3 +207,10 @@ if __name__ == "__main__":
         if result:
             api_calls = generate_api_calls(row, debug=True)
             print(json.dumps(api_calls, indent=2), "\n")
+            success_count += 1
+        else:
+            fail_count += 1
+
+    print(f"Successfully processed {success_count} rows.")
+    if fail_count > 0:
+        print(f"Failed rows: {fail_count}")
