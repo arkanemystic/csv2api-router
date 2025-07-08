@@ -208,9 +208,12 @@ if __name__ == "__main__":
             api_calls = generate_api_calls(row, debug=True)
             print(json.dumps(api_calls, indent=2), "\n")
             success_count += 1
+            # Print the API call(s) made for this row in the summary
+            for api_call in api_calls:
+                print(f"API call made: {json.dumps(api_call)}")
         else:
             fail_count += 1
 
     print(f"Successfully processed {success_count} rows.")
-    if fail_count > 0:
-        print(f"Failed rows: {fail_count}")
+    # Always print the failed rows line, even if 0 failures, for UI compatibility
+    print(f"Failed rows: {fail_count}")
