@@ -7,6 +7,7 @@ import time
 import logging
 import os
 from typing import List, Dict, Any, Optional, Tuple
+import argparse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -188,32 +189,150 @@ Output the CSV data only, no explanations or markdown."""
     csv_str = re.sub(r'```csv|```', '', stdout)
     return csv_str.strip()
 
-if __name__ == "__main__":
-    # Add test cases for each API
-    test_rows = [
-        {"contract_address": "0xaabbccddeeff0011223344556677889900aabbcc", "event_name_raw": "Transfer(address", "event_params_raw": "address,uint256)"},
-        {"chain": "ETHEREUM", "address": "0x1234567890abcdef"},
-        {"chain": "ETHEREUM", "tx_hash": "0x96b4aca5d38bbdf39e667b3e74bcebaf464a0209d1f1e692d8b3220bcb6b7162", "expense_category": "sandwich"},
-        {"account_id": "acct_123", "amount": 100.5},
-        {"request": "list all chains"}
-    ]
-    print("--- Testing LLM Client (R6) ---")
-    success_count = 0
-    fail_count = 0
-    for i, row in enumerate(test_rows, 1):
-        print(f"Test Case {i}:")
-        result = clean_and_validate_api_call(row, debug=True)
-        print(json.dumps(result, indent=2), "\n")
-        if result:
-            api_calls = generate_api_calls(row, debug=True)
-            print(json.dumps(api_calls, indent=2), "\n")
-            success_count += 1
-            # Print the API call(s) made for this row in the summary
-            for api_call in api_calls:
-                print(f"API call made: {json.dumps(api_call)}")
-        else:
-            fail_count += 1
+def process_prompt(prompt: str, debug: bool = False):
+    """
+    Heuristically parse a natural language prompt and construct an API call dict.
+    This does not alter the CSV pipeline, just provides a new CLI interface.
+    """
+    import re
+    prompt_lower = prompt.lower()
+    api_call = None
+    # Heuristic: tag as expense
+    if 'tag as expense' in prompt_lower or 'expense' in prompt_lower:
+        # Try to extract tx_hash and category
+        tx_hash = None
+        expense_category = None
+        chain = 'ETHEREUM'
+        # Find tx_hash (simple 0x... pattern)
+        m = re.search(r'0x[a-fA-F0-9]{10,}', prompt)
+        if m:
+            tx_hash = m.group(0)
+        # Find category (after 'for' or 'on')
+        m2 = re.search(r'(?:for|on) ([\w\s\-]+)', prompt_lower)
+        if m2:
+            expense_category = m2.group(1).strip()
+        if not expense_category:
+            expense_category = 'general'
+        api_call = {
+            "method": "tag_as_expense",
+            "params": {
+                "tx_hash": tx_hash or "",
+                "chain": chain,
+                "expense_category": expense_category
+            }
+        }
+    elif 'get transaction' in prompt_lower or 'transaction' in prompt_lower:
+        tx_hash = None
+        chain = 'ETHEREUM'
+        m = re.search(r'0x[a-fA-F0-9]{10,}', prompt)
+        if m:
+            tx_hash = m.group(0)
+        api_call = {
+            "method": "get_transaction",
+            "params": {
+                "chain": chain,
+                "tx_hash": tx_hash or ""
+            }
+        }
+    elif 'list chains' in prompt_lower or 'all chains' in prompt_lower:
+        api_call = {
+            "method": "list_chains",
+            "params": {}
+        }
+    elif 'fill account' in prompt_lower:
+        # Example: fill account by account_id 123 with amount 100
+        account_id = None
+        amount = None
+        m = re.search(r'account[_\s]?id[\s:]*([\w\-]+)', prompt_lower)
+        if m:
+            account_id = m.group(1)
+        m2 = re.search(r'amount[\s:]*([\d\.]+)', prompt_lower)
+        if m2:
+            amount = float(m2.group(1))
+        api_call = {
+            "method": "fill_account_by",
+            "params": {
+                "account_id": account_id or "",
+                "amount": amount or 0
+            }
+        }
+    elif 'get receipt' in prompt_lower:
+        tx_hash = None
+        chain = 'ETHEREUM'
+        m = re.search(r'0x[a-fA-F0-9]{10,}', prompt)
+        if m:
+            tx_hash = m.group(0)
+        api_call = {
+            "method": "get_receipt",
+            "params": {
+                "chain": chain,
+                "tx_hash": tx_hash or ""
+            }
+        }
+    else:
+        print("Could not parse prompt into an API call.")
+        return
+    print(json.dumps(api_call, indent=2))
 
-    print(f"Successfully processed {success_count} rows.")
-    # Always print the failed rows line, even if 0 failures, for UI compatibility
-    print(f"Failed rows: {fail_count}")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="CSV2API Router CLI")
+    parser.add_argument('--input', '-i', type=str, help='Path to input JSON or CSV file')
+    parser.add_argument('--prompt', '-p', type=str, help='Natural language prompt to convert to API call')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+
+    # Process prompt if provided
+    if args.prompt:
+        process_prompt(args.prompt, debug=args.debug)
+
+    # Process input file if provided (existing logic, unchanged)
+    if args.input:
+        import pandas as pd
+        try:
+            data = pd.read_json(args.input)
+        except Exception:
+            data = pd.read_csv(args.input)
+        rows = data.to_dict(orient='records')
+        success_count = 0
+        fail_count = 0
+        for i, row in enumerate(rows, 1):
+            result = clean_and_validate_api_call(row, debug=args.debug)
+            if result:
+                api_calls = generate_api_calls(row, debug=args.debug)
+                success_count += 1
+                for api_call in api_calls:
+                    print(f"API call made: {json.dumps(api_call)}")
+            else:
+                fail_count += 1
+        print(f"Successfully processed {success_count} rows.")
+        print(f"Failed rows: {fail_count}")
+    # If neither input nor prompt, run test cases (existing logic)
+    if not args.input and not args.prompt:
+        # Add test cases for each API
+        test_rows = [
+            {"contract_address": "0xaabbccddeeff0011223344556677889900aabbcc", "event_name_raw": "Transfer(address", "event_params_raw": "address,uint256)"},
+            {"chain": "ETHEREUM", "address": "0x1234567890abcdef"},
+            {"chain": "ETHEREUM", "tx_hash": "0x96b4aca5d38bbdf39e667b3e74bcebaf464a0209d1f1e692d8b3220bcb6b7162", "expense_category": "sandwich"},
+            {"account_id": "acct_123", "amount": 100.5},
+            {"request": "list all chains"}
+        ]
+        print("--- Testing LLM Client (R6) ---")
+        success_count = 0
+        fail_count = 0
+        for i, row in enumerate(test_rows, 1):
+            print(f"Test Case {i}:")
+            result = clean_and_validate_api_call(row, debug=True)
+            print(json.dumps(result, indent=2), "\n")
+            if result:
+                api_calls = generate_api_calls(row, debug=True)
+                print(json.dumps(api_calls, indent=2), "\n")
+                success_count += 1
+                # Print the API call(s) made for this row in the summary
+                for api_call in api_calls:
+                    print(f"API call made: {json.dumps(api_call)}")
+            else:
+                fail_count += 1
+
+        print(f"Successfully processed {success_count} rows.")
+        # Always print the failed rows line, even if 0 failures, for UI compatibility
+        print(f"Failed rows: {fail_count}")
