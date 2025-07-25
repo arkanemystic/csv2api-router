@@ -10,8 +10,10 @@ import re
 import random
 import string
 from .extractor import extract_api_calls
+from csv2api.src.utils.logger import setup_logger
 
 logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 class PipelineProcessor:
     """Main pipeline processor for handling CSV data using LLM for event extraction."""
@@ -354,6 +356,12 @@ Output ONLY a valid JSON object as specified above. Do NOT include any comments,
             logger.warning("No valid API calls generated.")
             function_summary = None
         return function_summary, api_calls_per_row
+
+    def process_api_call(api_func, params):
+        logger.debug(f"Calling API function: {api_func.__name__} with params: {params}")
+        result = api_func(**params)
+        logger.debug(f"API call result: {result}")
+        return result
 
 # Helper function for external use
 async def process_with_llm(extracted_data: Union[Dict, List[Dict]], prompt: str = "tag these transactions as expenses") -> List[Dict]:

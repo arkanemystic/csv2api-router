@@ -8,8 +8,13 @@ from typing import Any, Dict, Optional
 class AuditLogger:
     """Handles audit logging with structured output."""
     
-    def __init__(self, log_dir: Optional[str] = None):
+    def _get_env_log_level(self):
+        level_str = os.environ.get("PENNY_LOG_LEVEL", "INFO").upper()
+        return getattr(logging, level_str, logging.INFO)
+
+    def __init__(self, log_dir: Optional[str] = None, level: Optional[int] = None):
         self.log_dir = log_dir or 'logs'
+        self.level = level if level is not None else self._get_env_log_level()
         self._setup_logging()
         
     def _setup_logging(self):
@@ -19,12 +24,13 @@ class AuditLogger:
         
         # Set up root logger
         logging.basicConfig(
-            level=logging.INFO,
+            level=self.level,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         
         # Create logger instance
         self.logger = logging.getLogger('csv2api')
+        self.logger.setLevel(self.level)
         
         # Add file handlers
         timestamp = datetime.now().strftime('%Y%m%d')
